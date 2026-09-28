@@ -2,12 +2,13 @@
 
 App web (cài được lên màn hình điện thoại như app thật) để:
 
-- **Tổng quan**: doanh thu, giá vốn, lãi gộp, tiền nhập hàng, chi phí khác, lãi thực; biểu đồ doanh thu theo ngày; món bán chạy; đơn đặt 7 ngày tới.
-- **Bán hàng**: mỗi ngày bấm +/− số phần bán của từng món, tự lưu.
-- **Lịch đơn**: lịch tháng, đơn đặt trước (khách, SĐT, món, tiền cọc, trạng thái) và ghi chú theo ngày.
-- **Nhập hàng**: ghi tiền mua nguyên liệu; giá nguyên liệu tự cập nhật theo lần mua mới nhất.
-- **Sản phẩm**: menu + công thức 1 phần → tự tính giá vốn và lãi mỗi phần.
-- **Chi phí khác**: mặt bằng, điện, nước, lương…
+- **Tổng quan**: doanh thu, lãi gộp, hàng hủy, hao hụt, lãi ước tính, lãi dòng tiền, tiền mặt / chuyển khoản, điểm hòa vốn; so với kỳ trước; cảnh báo sắp hết hàng / lãi mỏng; **xuất Excel**.
+- **Bán hàng**: mỗi ngày bấm +/− số phần bán, tự lưu; ghi **tặng**, **giảm giá**, **hàng hủy**; **chốt tiền cuối ngày** (tiền mặt + chuyển khoản, báo chênh lệch).
+- **Lịch đơn**: đơn đặt trước chọn món từ menu, tự tính tiền; bấm **Đã giao** là tự ghi vào doanh thu.
+- **Nhập hàng**: một lần đi chợ nhập nhiều món, mua theo kg / lít; giá nguyên liệu tự tính **bình quân**.
+- **Nguyên liệu & tồn kho**: tồn kho tự trừ theo số bán × công thức; **kiểm kê** để biết hao hụt; báo sắp hết.
+- **Sản phẩm & công thức**: **công thức theo mẻ** (1 mẻ ra bao nhiêu ml) → nhiều size dùng chung 1 công thức → tự tính giá vốn, lãi mỗi phần.
+- **Chi phí khác**: mặt bằng, điện, nước, lương… (xem theo ngày / tuần / tháng).
 
 Đăng nhập: **admin / adminmotra**. Máy sẽ nhớ đăng nhập cho tới khi bấm **Đăng xuất**.
 
@@ -17,6 +18,8 @@ App web (cài được lên màn hình điện thoại như app thật) để:
 
 1. Vào <https://supabase.com> → đăng ký → **New project** (chọn region *Singapore* cho nhanh). Đặt mật khẩu database gì cũng được (không phải mật khẩu đăng nhập app).
 2. Chờ project tạo xong → menu trái **SQL Editor** → **New query** → mở file [`supabase/schema.sql`](supabase/schema.sql), copy toàn bộ dán vào → bấm **Run**. Thấy “Success” là xong.
+   Tiếp tục **New query** → dán file [`supabase/nang-cap-v2.sql`](supabase/nang-cap-v2.sql) → **Run**.
+   (Đã có database từ bản cũ thì chỉ cần chạy `nang-cap-v2.sql`, dữ liệu cũ giữ nguyên.)
 3. **Tạo tài khoản admin**: menu trái **Authentication** → **Users** → **Add user** → **Create new user**:
    - Email: `admin@suahat.app`
    - Password: `adminmotra`
@@ -62,24 +65,33 @@ App sẽ mở toàn màn hình như app bình thường và tự cập nhật kh
 
 ---
 
+## Dữ liệu mẫu để thử
+
+- Tạo: chạy [`supabase/du-lieu-mau.sql`](supabase/du-lieu-mau.sql) trong SQL Editor.
+- Xóa: chạy [`supabase/xoa-du-lieu-mau.sql`](supabase/xoa-du-lieu-mau.sql) — chỉ xóa đúng dữ liệu mẫu. Cuối file có lệnh xóa sạch toàn bộ nếu muốn bắt đầu lại từ đầu.
+
 ## Cách dùng hằng ngày
 
 **Làm 1 lần lúc đầu:**
-1. **Nhập hàng** → “+ Nhập hàng” → chọn *Nguyên liệu mới…* để tạo nguyên liệu (hạt điều, hạnh nhân, đường…) kèm lần mua đầu tiên.
-   Mẹo: dùng đơn vị **g** hoặc **ml** (mua 1kg thì nhập 1000 g) để ghi công thức cho dễ.
-2. **Sản phẩm** → “Thêm món”: nhập giá bán, chi phí phụ (ly, nắp, ống hút, tem) và công thức 1 phần (vd. 50 g hạt điều + 15 g đường). App tự tính **giá vốn** và **lãi mỗi phần**.
+1. **Nguyên liệu & tồn kho** → “+ Nguyên liệu”: hạt điều, đường, nước lọc, sữa tươi, chai… Hạt / bột dùng đơn vị **g**, nước / sữa dùng **ml**, chai / nắp dùng **cái**.
+2. **Kiểm kê** lần đầu: cân / đếm hàng đang có rồi nhập vào → từ đó app tự tính tồn kho.
+3. **Sản phẩm & công thức** → tab **Công thức mẻ**: ghi đúng 1 lần nấu thực tế (vd 1 kg hạt điều + 9 lít nước + 300 g đường) và mẻ ra được bao nhiêu (lít, ml hoặc số chai).
+4. Tab **Món bán** → “Thêm món”: giá bán, chọn công thức mẻ + dung tích (500 ml, 330 ml…), thêm **chai** vào “nguyên liệu thêm cho mỗi phần”. App tự tính giá vốn và lãi.
 
 **Mỗi ngày:**
-- **Bán hàng**: bán được món nào thì bấm vào món đó (+1). Có thể gõ thẳng số lượng. Xem lại ngày cũ bằng mũi tên ← →.
-- **Nhập hàng**: mỗi lần đi chợ thì ghi lại → giá nguyên liệu tự cập nhật → giá vốn các món tự đổi theo.
-- **Lịch đơn**: khách đặt trước thì bấm “+ Đơn đặt”; giao xong bấm “Đã giao”. Ghi chú việc cần làm theo ngày bằng nút “Ghi chú”.
+- **Bán hàng**: bấm vào món để +1. Nút **⋯** trên mỗi món để ghi tặng, giảm giá, hủy. Cuối ngày **chốt tiền** (tiền mặt + chuyển khoản).
+- **Nhập hàng**: mỗi lần đi chợ bấm “Nhập hàng”, thêm nhiều món trong 1 lần, nhập theo kg / lít.
+- **Lịch đơn**: khách đặt trước → chọn món. Giao xong bấm **Đã giao** → tự vào doanh thu (không cần nhập lại ở Bán hàng).
 - **Chi phí khác**: tiền nhà, điện nước, lương…
 
-**Hiểu các con số ở Tổng quan:**
-- **Lãi gộp** = Doanh thu − giá vốn theo công thức → biết bán có lời bao nhiêu trên mỗi phần.
-- **Lãi thực (dòng tiền)** = Doanh thu − tiền nhập nguyên liệu − chi phí khác → tiền thực sự còn lại trong khoảng thời gian đó.
+**Mỗi tuần (khuyên dùng):** **Kiểm kê** cuối ngày (sau khi nhập xong bán hàng) → biết hao hụt, tồn kho chính xác lại.
 
-> Lưu ý: đơn đặt trước chỉ để nhắc lịch. Khi giao đơn, nhớ bấm thêm số lượng ở trang **Bán hàng** để tính vào doanh thu.
+**Hiểu các con số ở Tổng quan:**
+- **Lãi gộp** = Doanh thu − giá vốn (gồm phần tặng) − hàng hủy.
+- **Lãi ước tính** = Lãi gộp − hao hụt kiểm kê − chi phí khác → lãi thực của việc kinh doanh.
+- **Lãi dòng tiền** = Doanh thu − tiền nhập nguyên liệu − chi phí khác → tiền thực sự còn lại (tuần nào nhập nhiều hàng thì số này thấp).
+- **Điểm hòa vốn** = cần bán bao nhiêu phần mỗi ngày để lãi gộp đủ bù chi phí khác.
+- **Giá nguyên liệu bình quân**: còn 1 kg giá 280k, mua thêm 2 kg giá 290k → giá mới = (280k + 580k) / 3 kg ≈ 287k/kg.
 
 ## Lưu ý về gói miễn phí
 
@@ -93,10 +105,14 @@ App sẽ mở toàn màn hình như app bình thường và tự cập nhật kh
 src/
   App.jsx              đăng nhập + điều hướng
   lib/supabase.js      kết nối Supabase
-  lib/cost.js          công thức tính giá vốn
+  lib/cost.js          giá vốn (mẻ, dung tích), giá bình quân
+  lib/stock.js         tính tồn kho
+  lib/orders.js        đơn đặt → doanh thu
+  lib/xlsx.js          xuất Excel
   lib/format.js        định dạng tiền, ngày
   components/          Layout (menu), ui (modal, ô nhập tiền…)
-  pages/               Dashboard, Sales, CalendarPage, Purchases, Products, Expenses
+  pages/               Dashboard, Sales, CalendarPage, Purchases, Ingredients, Products, Expenses
 supabase/schema.sql    cấu trúc database
+supabase/nang-cap-v2.sql  nâng cấp database (mẻ, tồn kho, hủy, chốt tiền…)
 scripts/make-icons.mjs tạo icon PWA (npm run icons)
 ```

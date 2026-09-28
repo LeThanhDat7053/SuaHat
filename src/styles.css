@@ -43,6 +43,8 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
+.block { display: block; }
+.align-right { text-align: right; }
 .grow { flex: 1; min-width: 0; }
 .good-text { color: var(--good); }
 .danger-text { color: var(--bad); }
@@ -354,6 +356,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .money-input, .unit-input { position: relative; display: flex; align-items: center; }
 .money-input input, .unit-input input { padding-right: 36px; }
 .money-input span, .unit-input span { position: absolute; right: 12px; color: var(--muted); pointer-events: none; font-size: 0.9rem; }
+.qty-input { display: flex; align-items: center; gap: 8px; }
+.qty-input input { flex: 1; min-width: 0; }
+.field .qty-input select { width: auto; min-width: 72px; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
 .check input { width: 20px; height: 20px; accent-color: var(--primary); }
 .summary-box { background: var(--primary-soft); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
@@ -499,3 +504,56 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .chart-tip .muted { color: rgba(255, 255, 255, 0.7); }
 .chart-x { display: flex; height: 20px; font-size: 0.7rem; color: var(--muted); }
 .chart-x span { flex: 1; text-align: center; white-space: nowrap; overflow: visible; min-width: 0; }
+
+/* ---------- v2: tồn kho, mẻ, chốt tiền, cảnh báo ---------- */
+.badge-bad { background: var(--bad-soft); color: var(--bad); }
+.inline-icon { vertical-align: -3px; margin-right: 4px; }
+.callout {
+  background: var(--warn-soft);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 0.9rem;
+}
+.inline-field { display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--ink-2); flex-wrap: wrap; }
+.inline-field input { width: 72px; }
+
+.count-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.count-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.count-row:first-child { border-top: 0; }
+.count-input { width: 120px; flex-shrink: 0; }
+.count-input input { width: 100%; padding: 8px 40px 8px 10px; border: 1px solid var(--line); border-radius: 10px; min-height: 40px; background: var(--surface); }
+
+.line-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.line-card-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -4px -6px 0; }
+
+.order-line { display: grid; grid-template-columns: 1fr 64px 38px; gap: 8px; align-items: center; width: 100%; }
+.order-line .money-input { grid-column: 1 / 3; }
+.order-line select, .order-line input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  min-height: 44px;
+}
+.order-line .money-input input { padding-right: 36px; }
+@media (min-width: 480px) {
+  .order-line { grid-template-columns: 1fr 64px 120px 38px; }
+  .order-line .money-input { grid-column: auto; }
+}
+
+.sell-top { display: flex; align-items: flex-start; flex: 1; }
+.sell-top .sell-main { flex: 1; min-width: 0; }
+.sell-more { margin: 6px 4px 0 0; color: var(--muted); }
+.sell-tags { font-size: 0.75rem; color: var(--warn); font-weight: 500; }
+
+.closing { margin-top: 20px; display: flex; flex-direction: column; gap: 14px; }
+.closing .section-head { margin-bottom: 0; }
+
+.alert-card { background: var(--bad-soft); border-color: transparent; display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.alert-card > strong { color: var(--bad); }
+.alert-row { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 0.9rem; flex-wrap: wrap; }
+
+.plan-input { width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; text-align: right; background: var(--surface); }

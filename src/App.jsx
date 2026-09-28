@@ -10,6 +10,7 @@ import Purchases from './pages/Purchases'
 import Products from './pages/Products'
 import Expenses from './pages/Expenses'
 import More from './pages/More'
+import Ingredients from './pages/Ingredients'
 
 export default function App() {
   if (!isConfigured) return <SetupNeeded />
@@ -38,6 +39,7 @@ function AuthedApp() {
           <Route path="/nhap-hang" element={<Purchases />} />
           <Route path="/san-pham" element={<Products />} />
           <Route path="/chi-phi" element={<Expenses />} />
+          <Route path="/nguyen-lieu" element={<Ingredients />} />
           <Route path="/khac" element={<More />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

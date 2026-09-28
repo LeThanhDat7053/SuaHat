@@ -2,6 +2,7 @@
 --  QUÁN SỮA HẠT — Cấu trúc database
 --  Cách dùng: Supabase Dashboard → SQL Editor → New query → dán toàn bộ
 --  file này vào → bấm RUN. Chỉ cần chạy 1 lần.
+--  Sau đó chạy tiếp file nang-cap-v2.sql.
 -- =====================================================================
 
 -- Nguyên liệu (hạt điều, hạnh nhân, đường, ly, nắp...)

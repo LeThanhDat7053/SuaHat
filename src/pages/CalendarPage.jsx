@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Tras
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader } from '../components/ui'
+import { linesTotal, orderItemsText, orderSource, syncOrderSales } from '../lib/orders'
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 export const STATUS = {
@@ -56,7 +57,9 @@ export default function CalendarPage() {
 
   async function setStatus(order, status) {
     const { error } = await supabase.from('orders').update({ status }).eq('id', order.id)
-    if (!showError(error)) load()
+    if (showError(error)) return
+    showError(await syncOrderSales({ ...order, status }))
+    load()
   }
   async function removeNote(note) {
     if (!confirm('Xóa ghi chú này?')) return
@@ -154,7 +157,8 @@ export default function CalendarPage() {
                 </div>
                 <span className={`badge badge-${STATUS[o.status].cls}`}>{STATUS[o.status].label}</span>
               </div>
-              {o.items && <p className="order-items">{o.items}</p>}
+              {orderItemsText(o) && <p className="order-items">{orderItemsText(o, '\n')}</p>}
+              {o.lines?.length > 0 && o.items && <p className="muted small">{o.items}</p>}
               {o.note && <p className="muted small">Ghi chú: {o.note}</p>}
               <div className="order-money small">
                 <span>Tổng {money(o.total)}</span>
@@ -173,6 +177,9 @@ export default function CalendarPage() {
                   <button className="btn btn-ghost btn-sm" onClick={() => setStatus(o, 'done')}>
                     <Check size={16} /> Đã giao
                   </button>
+                )}
+                {o.status === 'done' && !o.lines?.length && (
+                  <span className="muted small">Đơn chưa chọn món nên chưa tính vào doanh thu — bấm Sửa để chọn món.</span>
                 )}
                 <button className="btn btn-ghost btn-sm" onClick={() => setEditOrder(o)}>
                   <Pencil size={16} /> Sửa
@@ -223,39 +230,72 @@ export default function CalendarPage() {
 }
 
 export function OrderForm({ order, onClose, onSaved }) {
+  const [products, setProducts] = useState([])
   const [form, setForm] = useState({
     order_date: order.order_date || todayStr(),
     order_time: order.order_time ? fmtTime(order.order_time) : '',
     customer: order.customer || '',
     phone: order.phone || '',
+    lines: order.lines?.length ? order.lines : [],
     items: order.items || '',
+    discount: order.discount || '',
     total: order.total ?? '',
     deposit: order.deposit ?? '',
     status: order.status || 'pending',
     note: order.note || '',
   })
+  const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    supabase
+      .from('products')
+      .select('id,name,price,active')
+      .order('active', { ascending: false })
+      .order('name')
+      .then(({ data, error }) => {
+        if (showError(error)) return
+        setProducts(data)
+        if (!order.id && !order.lines?.length && data[0]) set('lines', [{ product_id: data[0].id, name: data[0].name, qty: 1, price: data[0].price }])
+      })
+  }, [])
+
+  const setLine = (i, patch) => set('lines', form.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
+  const lines = form.lines.filter((l) => l.product_id && Number(l.qty) > 0)
+  const hasLines = lines.length > 0
+  const sub = linesTotal(lines)
+  const total = hasLines ? Math.max(0, sub - Number(form.discount || 0)) : Number(form.total || 0)
 
   async function submit(e) {
     e.preventDefault()
+    setBusy(true)
     const payload = {
-      ...form,
+      order_date: form.order_date,
       order_time: form.order_time || null,
       customer: form.customer.trim(),
       phone: form.phone.trim() || null,
+      lines: lines.map((l) => ({ product_id: Number(l.product_id), name: l.name, qty: Math.floor(Number(l.qty)), price: Number(l.price || 0) })),
       items: form.items.trim() || null,
-      note: form.note.trim() || null,
-      total: Number(form.total || 0),
+      discount: hasLines ? Number(form.discount || 0) : 0,
+      total,
       deposit: Number(form.deposit || 0),
+      status: form.status,
+      note: form.note.trim() || null,
     }
-    const { error } = order.id
-      ? await supabase.from('orders').update(payload).eq('id', order.id)
-      : await supabase.from('orders').insert(payload)
-    if (!showError(error)) onSaved(payload.order_date)
+    const { data, error } = order.id
+      ? await supabase.from('orders').update(payload).eq('id', order.id).select().single()
+      : await supabase.from('orders').insert(payload).select().single()
+    if (showError(error)) return setBusy(false)
+    // đơn đã giao → ghi / cập nhật doanh thu
+    showError(await syncOrderSales(data))
+    setBusy(false)
+    onSaved(payload.order_date)
   }
 
   async function remove() {
-    if (!confirm(`Xóa đơn của ${order.customer}?`)) return
+    if (!confirm(`Xóa đơn của ${order.customer}?${order.status === 'done' ? '\nDoanh thu của đơn này cũng bị gỡ khỏi bán hàng.' : ''}`)) return
+    const del = await supabase.from('sales').delete().eq('source', orderSource(order.id))
+    if (showError(del.error)) return
     const { error } = await supabase.from('orders').delete().eq('id', order.id)
     if (!showError(error)) onSaved(order.order_date)
   }
@@ -279,18 +319,65 @@ export function OrderForm({ order, onClose, onSaved }) {
             <input type="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
           </Field>
         </div>
-        <Field label="Món đặt">
-          <textarea
-            rows={3}
-            value={form.items}
-            onChange={(e) => set('items', e.target.value)}
-            placeholder={'VD:\n5 sữa hạt điều 500ml\n3 sữa óc chó 330ml'}
-          />
+
+        <div className="field">
+          <span className="field-label">Món đặt</span>
+          <span className="field-hint">Chọn món để app tự tính tiền và tự ghi doanh thu khi bấm “Đã giao”.</span>
+          <div className="recipe">
+            {form.lines.map((l, i) => (
+              <div key={i} className="order-line">
+                <select
+                  value={l.product_id}
+                  onChange={(e) => {
+                    const p = products.find((x) => String(x.id) === e.target.value)
+                    setLine(i, p ? { product_id: p.id, name: p.name, price: p.price } : { product_id: '' })
+                  }}
+                >
+                  <option value="">— Chọn món —</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.active ? '' : ' (đang ẩn)'}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  inputMode="numeric"
+                  value={l.qty}
+                  onChange={(e) => setLine(i, { qty: e.target.value })}
+                  aria-label="Số lượng"
+                />
+                <MoneyInput value={l.price} onChange={(v) => setLine(i, { price: v })} aria-label="Đơn giá" />
+                <button type="button" className="icon-btn" onClick={() => set('lines', form.lines.filter((_, idx) => idx !== i))} aria-label="Bỏ món">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => set('lines', [...form.lines, { product_id: '', name: '', qty: 1, price: '' }])}
+            >
+              <Plus size={16} /> Thêm món
+            </button>
+          </div>
+        </div>
+        <Field label="Ghi chú món" hint="Ít đường, không đá…">
+          <textarea rows={2} value={form.items} onChange={(e) => set('items', e.target.value)} />
         </Field>
+
         <div className="form-row">
-          <Field label="Tổng tiền">
-            <MoneyInput value={form.total} onChange={(v) => set('total', v)} />
-          </Field>
+          {hasLines ? (
+            <Field label="Giảm giá cả đơn" hint={`Tạm tính ${money(sub)} → tổng ${money(total)}`}>
+              <MoneyInput value={form.discount} onChange={(v) => set('discount', v)} />
+            </Field>
+          ) : (
+            <Field label="Tổng tiền">
+              <MoneyInput value={form.total} onChange={(v) => set('total', v)} />
+            </Field>
+          )}
           <Field label="Đã cọc">
             <MoneyInput value={form.deposit} onChange={(v) => set('deposit', v)} />
           </Field>
@@ -305,7 +392,7 @@ export function OrderForm({ order, onClose, onSaved }) {
           </select>
         </Field>
         <Field label="Ghi chú">
-          <textarea rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Địa chỉ giao, ít đường…" />
+          <textarea rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Địa chỉ giao…" />
         </Field>
         <div className="form-actions">
           {order.id && (
@@ -313,10 +400,15 @@ export function OrderForm({ order, onClose, onSaved }) {
               Xóa
             </button>
           )}
+          <span className="grow align-right">
+            Tổng <strong>{money(total)}</strong>
+          </span>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary">Lưu</button>
+          <button className="btn btn-primary" disabled={busy}>
+            {busy ? 'Đang lưu…' : 'Lưu'}
+          </button>
         </div>
       </form>
     </Modal>

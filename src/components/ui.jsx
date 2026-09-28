@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
-import { addDays, fmtDateLong, todayStr } from '../lib/format'
+import { addDays, fmtDateLong, periodLabel, periodRange, shiftPeriod, todayStr } from '../lib/format'
 
 export function PageHeader({ title, subtitle, children }) {
   return (
@@ -88,6 +88,47 @@ export function DateNav({ date, onChange }) {
           Hôm nay
         </button>
       )}
+    </div>
+  )
+}
+
+const PERIODS = [
+  ['day', 'Ngày'],
+  ['week', 'Tuần'],
+  ['month', 'Tháng'],
+]
+
+// Chọn kỳ xem: Ngày / Tuần / Tháng, lùi – tới từng kỳ
+export function PeriodPicker({ period, onChange }) {
+  const { mode, date } = period
+  const { from, to } = periodRange(mode, date)
+  const t = todayStr()
+  return (
+    <div className="period">
+      <div className="tabs">
+        {PERIODS.map(([k, label]) => (
+          <button key={k} type="button" className={mode === k ? 'active' : ''} onClick={() => onChange({ mode: k, date })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="date-nav">
+        <button type="button" className="icon-btn" onClick={() => onChange({ mode, date: shiftPeriod(mode, date, -1) })} aria-label="Kỳ trước">
+          <ChevronLeft size={20} />
+        </button>
+        <label className="date-nav-label">
+          <span>{periodLabel(mode, date)}</span>
+          <input type="date" value={date} onChange={(e) => e.target.value && onChange({ mode, date: e.target.value })} />
+        </label>
+        <button type="button" className="icon-btn" onClick={() => onChange({ mode, date: shiftPeriod(mode, date, 1) })} aria-label="Kỳ sau">
+          <ChevronRight size={20} />
+        </button>
+        {(t < from || t > to) && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ mode, date: t })}>
+            Hiện tại
+          </button>
+        )}
+      </div>
     </div>
   )
 }

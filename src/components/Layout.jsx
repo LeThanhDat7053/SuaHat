@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut } from 'lucide-react'
+import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut, Wheat } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 export const NAV = [
@@ -7,7 +7,8 @@ export const NAV = [
   { to: '/ban-hang', label: 'Bán hàng', icon: ShoppingBag, mobile: true },
   { to: '/lich', label: 'Lịch đơn', icon: CalendarDays, mobile: true },
   { to: '/nhap-hang', label: 'Nhập hàng', icon: PackagePlus, mobile: true },
-  { to: '/san-pham', label: 'Sản phẩm', icon: CupSoda },
+  { to: '/nguyen-lieu', label: 'Nguyên liệu & tồn kho', icon: Wheat },
+  { to: '/san-pham', label: 'Sản phẩm & công thức', icon: CupSoda },
   { to: '/chi-phi', label: 'Chi phí khác', icon: Receipt },
 ]
 

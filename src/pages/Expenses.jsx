@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Plus, Receipt } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
-import { fmtDate, money, monthRange, thisMonth, todayStr } from '../lib/format'
-import { Empty, Field, Loading, Modal, MoneyInput, PageHeader } from '../components/ui'
+import { fmtDate, money, periodRange, todayStr } from '../lib/format'
+import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker } from '../components/ui'
 
 const CATEGORIES = ['Mặt bằng', 'Điện', 'Nước', 'Gas', 'Lương nhân viên', 'Bao bì', 'Quảng cáo', 'Sửa chữa', 'Khác']
 
 export default function Expenses() {
-  const [month, setMonth] = useState(thisMonth())
+  const [period, setPeriod] = useState({ mode: 'month', date: todayStr() })
   const [list, setList] = useState(null)
   const [editing, setEditing] = useState(null)
 
   async function load() {
-    const { from, to } = monthRange(month)
+    const { from, to } = periodRange(period.mode, period.date)
     const { data, error } = await supabase
       .from('expenses')
       .select('*')
@@ -23,7 +23,7 @@ export default function Expenses() {
   }
   useEffect(() => {
     load()
-  }, [month])
+  }, [period])
 
   const total = (list || []).reduce((s, e) => s + Number(e.amount), 0)
   const byCat = {}
@@ -37,17 +37,17 @@ export default function Expenses() {
         </button>
       </PageHeader>
 
+      <PeriodPicker period={period} onChange={setPeriod} />
       <div className="toolbar">
-        <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
         <span>
-          Tổng tháng: <strong>{money(total)}</strong>
+          Tổng: <strong>{money(total)}</strong>
         </span>
       </div>
 
       {!list ? (
         <Loading />
       ) : list.length === 0 ? (
-        <Empty icon={Receipt}>Tháng này chưa có chi phí nào.</Empty>
+        <Empty icon={Receipt}>Chưa có chi phí nào trong khoảng này.</Empty>
       ) : (
         <div className="two-col">
           <div className="card list-card">
