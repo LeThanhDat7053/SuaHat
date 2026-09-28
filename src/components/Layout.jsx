@@ -1,0 +1,56 @@
+import { NavLink } from 'react-router-dom'
+import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+
+export const NAV = [
+  { to: '/', label: 'Tổng quan', icon: LayoutDashboard, mobile: true },
+  { to: '/ban-hang', label: 'Bán hàng', icon: ShoppingBag, mobile: true },
+  { to: '/lich', label: 'Lịch đơn', icon: CalendarDays, mobile: true },
+  { to: '/nhap-hang', label: 'Nhập hàng', icon: PackagePlus, mobile: true },
+  { to: '/san-pham', label: 'Sản phẩm', icon: CupSoda },
+  { to: '/chi-phi', label: 'Chi phí khác', icon: Receipt },
+]
+
+export function logout() {
+  if (confirm('Đăng xuất khỏi máy này?')) supabase.auth.signOut()
+}
+
+export default function Layout({ children }) {
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <img src="/favicon.svg" alt="" width="36" height="36" />
+          <span>Quán Sữa Hạt</span>
+        </div>
+        <nav>
+          {NAV.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} end={to === '/'} className="side-link">
+              <Icon size={20} />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <button className="side-link side-logout" onClick={logout}>
+          <LogOut size={20} />
+          Đăng xuất
+        </button>
+      </aside>
+
+      <main className="content">{children}</main>
+
+      <nav className="bottom-nav">
+        {NAV.filter((n) => n.mobile).map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} end={to === '/'} className="bottom-link">
+            <Icon size={22} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+        <NavLink to="/khac" className="bottom-link">
+          <Menu size={22} />
+          <span>Khác</span>
+        </NavLink>
+      </nav>
+    </div>
+  )
+}
