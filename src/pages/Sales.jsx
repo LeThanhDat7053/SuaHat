@@ -4,7 +4,7 @@ import { Minus, Plus, CupSoda, Ellipsis, Wallet, Trash2 } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
-import { DateNav, Empty, Field, Loading, Modal, MoneyInput, PageHeader, StatTile } from '../components/ui'
+import { DateNav, Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 
 const isEmptyRow = (r) => !(r.quantity > 0) && !(r.gift_qty > 0) && !(Number(r.discount) > 0)
 
@@ -170,7 +170,17 @@ export default function Sales() {
     <>
       <PageHeader title="Bán hàng" subtitle="Bấm vào món để cộng 1 phần. Dữ liệu tự lưu.">
         <span className={`save-status ${status}`}>
-          {status === 'saving' ? 'Đang lưu…' : status === 'saved' ? 'Đã lưu' : status === 'error' ? 'Lỗi lưu' : ''}
+          {status === 'saving' ? (
+            <>
+              <span className="spinner" aria-hidden="true" /> Đang lưu…
+            </>
+          ) : status === 'saved' ? (
+            '✓ Đã lưu'
+          ) : status === 'error' ? (
+            'Lỗi lưu'
+          ) : (
+            ''
+          )}
         </span>
       </PageHeader>
 
@@ -277,11 +287,11 @@ export default function Sales() {
           row={rows[extra.id]}
           waste={waste[extra.id]}
           onClose={() => setExtra(null)}
-          onSave={(gift_qty, discount, wasteQty, reason) => {
+          onSave={async (gift_qty, discount, wasteQty, reason) => {
             const r = rows[extra.id]
             if (gift_qty !== (r?.gift_qty || 0) || discount !== Number(r?.discount || 0)) change(extra, { gift_qty, discount })
             if (wasteQty !== (waste[extra.id]?.quantity || 0) || (reason || null) !== (waste[extra.id]?.reason || null))
-              saveWaste(extra, wasteQty, reason)
+              await saveWaste(extra, wasteQty, reason)
             setExtra(null)
           }}
         />
@@ -296,16 +306,11 @@ function ExtraForm({ product, row, waste, onClose, onSave }) {
   const [wasteQty, setWasteQty] = useState(waste?.quantity || '')
   const [reason, setReason] = useState(waste?.reason || '')
   const int = (v) => Math.max(0, Math.floor(Number(v) || 0))
+  const [busy, onSubmit] = useSubmit(() => onSave(int(gift), Number(discount || 0), int(wasteQty), reason.trim()))
 
   return (
     <Modal title={product.name} onClose={onClose}>
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault()
-          onSave(int(gift), Number(discount || 0), int(wasteQty), reason.trim())
-        }}
-      >
+      <form className="form" onSubmit={onSubmit}>
         <div className="form-row">
           <Field label="Tặng khách (phần)" hint="Tính giá vốn, không tính doanh thu">
             <input type="number" min="0" inputMode="numeric" value={gift} onChange={(e) => setGift(e.target.value)} />
@@ -326,7 +331,7 @@ function ExtraForm({ product, row, waste, onClose, onSave }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Đóng
           </button>
-          <button className="btn btn-primary">Lưu</button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>
@@ -352,14 +357,15 @@ function DayClosing({ date, revenue, deposits }) {
       })
   }, [date])
 
+  const [busy, onSubmit] = useSubmit(submit)
+
   if (!form) return null
   const collected = Number(form.cash || 0) + Number(form.transfer || 0)
   const expected = revenue - deposits
   const diff = collected - expected
   const touched = form.cash !== '' || form.transfer !== ''
 
-  async function submit(e) {
-    e.preventDefault()
+  async function submit() {
     const { data, error } = await supabase
       .from('day_closings')
       .upsert({ date, cash: Number(form.cash || 0), transfer: Number(form.transfer || 0), note: form.note.trim() || null }, { onConflict: 'date' })
@@ -369,7 +375,7 @@ function DayClosing({ date, revenue, deposits }) {
   }
 
   return (
-    <form className="card closing" onSubmit={submit}>
+    <form className="card closing" onSubmit={onSubmit}>
       <div className="section-head">
         <h2>
           <Wallet size={18} className="inline-icon" /> Chốt tiền cuối ngày
@@ -406,7 +412,7 @@ function DayClosing({ date, revenue, deposits }) {
         <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="VD: thiếu 10k do thối nhầm" />
       </Field>
       <div className="form-actions">
-        <button className="btn btn-primary">{saved ? 'Cập nhật' : 'Chốt tiền'}</button>
+        <SaveButton busy={busy}>{saved ? 'Cập nhật' : 'Chốt tiền'}</SaveButton>
       </div>
     </form>
   )

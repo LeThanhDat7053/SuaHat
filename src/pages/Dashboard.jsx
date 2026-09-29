@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, TriangleAlert } from 'lucide-react'
+import { CircleQuestionMark, Download, TriangleAlert } from 'lucide-react'
 import { fetchAll, getSetting, showError, supabase } from '../lib/supabase'
 import { loadStock } from '../lib/stock'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
@@ -119,6 +119,9 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader title="Tổng quan" subtitle="Doanh thu, chi phí và lãi của quán">
+        <Link to="/huong-dan" className="btn btn-ghost">
+          <CircleQuestionMark size={18} /> Cách dùng
+        </Link>
         <button className="btn btn-ghost" disabled={!data} onClick={() => exportExcel(range, data)}>
           <Download size={18} /> Xuất Excel
         </button>
@@ -207,6 +210,13 @@ function Change({ now, before, prefix = '', suffix = null }) {
 }
 
 function Report({ data, range }) {
+  const [detail, setDetail] = useState(() => {
+    try {
+      return localStorage.getItem('dash_detail') === '1'
+    } catch {
+      return false
+    }
+  })
   const { sales, purchases, expenses, waste, counts, closings, prev } = data
   const cur = summarize(sales, waste)
   const old = summarize(prev.sales, prev.waste)
@@ -245,57 +255,99 @@ function Report({ data, range }) {
   const perDay = Object.fromEntries(days.map((d) => [d, 0]))
   sales.forEach((r) => (perDay[r.date] = (perDay[r.date] || 0) + saleRevenue(r)))
 
+  const lines = insights({ cur, old, net, top, other, perCup, needPerDay, soldPerDay, wasteQty, made })
+
+  function toggle() {
+    setDetail(!detail)
+    try {
+      localStorage.setItem('dash_detail', detail ? '0' : '1')
+    } catch {
+      // trình duyệt chặn lưu → chỉ không nhớ lựa chọn, không sao
+    }
+  }
+
   return (
     <>
-      <div className="stats">
+      <div className="stats stats-3">
         <StatTile
-          label="Doanh thu"
+          label="Bán được"
           value={money(cur.revenue)}
           note={
             <>
               {cur.cups} phần
-              <Change now={cur.revenue} before={old.revenue} prefix=" · " suffix={<> {vs}</>} />
+              <Change now={cur.revenue} before={old.revenue} prefix=" · " />
             </>
           }
         />
-        <StatTile
-          label="Lãi gộp"
-          value={money(cur.gross)}
-          note={
-            <>
-              Trừ giá vốn {moneyShort(cur.cogs)} và hàng hủy
-              <Change now={cur.gross} before={old.gross} prefix=" · " />
-            </>
-          }
-          tone={cur.gross >= 0 ? 'good' : 'bad'}
-        />
-        <StatTile
-          label="Hàng hủy"
-          value={money(cur.wasteCost)}
-          note={wasteQty ? `${wasteQty} phần · ${num((wasteQty / made) * 100, 1)}% số làm ra` : 'Không có'}
-          tone={made && wasteQty / made > 0.05 ? 'bad' : undefined}
-        />
-        <StatTile label="Hao hụt kiểm kê" value={money(shrink)} note={counts.length ? `${counts.length} lần kiểm` : 'Chưa kiểm kê trong kỳ'} />
-        <StatTile label="Chi phí khác" value={money(other)} />
-        <StatTile label="Lãi ước tính" value={money(net)} note="Lãi gộp − hao hụt − chi phí khác" tone={net >= 0 ? 'good' : 'bad'} />
-        <StatTile label="Tiền nhập nguyên liệu" value={money(bought)} />
-        <StatTile label="Lãi dòng tiền" value={money(cash)} note="Doanh thu − nhập hàng − chi phí khác" tone={cash >= 0 ? 'good' : 'bad'} />
-        {closings.length > 0 && (
-          <StatTile
-            label="Tiền mặt / chuyển khoản"
-            value={`${moneyShort(sum(closings, (r) => Number(r.cash)))} / ${moneyShort(sum(closings, (r) => Number(r.transfer)))}`}
-            note={`${closings.length} ngày đã chốt tiền`}
-          />
-        )}
-        {other > 0 && perCup > 0 && (
-          <StatTile
-            label="Điểm hòa vốn"
-            value={`${num(Math.ceil(needPerDay))} phần/ngày`}
-            note={`Đang bán ${num(soldPerDay, 1)} phần/ngày · lãi gộp TB ${moneyShort(perCup)}/phần`}
-            tone={soldPerDay >= needPerDay ? 'good' : 'bad'}
-          />
-        )}
+        <StatTile label="Lãi" value={money(net)} note="Đã trừ nguyên liệu và chi phí" tone={net >= 0 ? 'good' : 'bad'} />
+        <StatTile label="Tiền còn lại" value={money(cash)} note="Bán − đi chợ − chi phí" tone={cash >= 0 ? 'good' : 'bad'} />
       </div>
+
+      {lines.length > 0 && (
+        <div className="card insight">
+          {lines.map((l, i) => (
+            <p key={i} className={l.tone ? `${l.tone}-text` : ''}>
+              {l.text}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <button type="button" className="btn btn-ghost btn-sm detail-toggle" onClick={toggle}>
+        {detail ? 'Thu gọn ▴' : 'Xem chi tiết các con số ▾'}
+      </button>
+
+      {detail && (
+        <div className="stats">
+          <StatTile
+            label="Doanh thu"
+            value={money(cur.revenue)}
+            note={
+              <>
+                {cur.cups} phần
+                <Change now={cur.revenue} before={old.revenue} prefix=" · " suffix={<> {vs}</>} />
+              </>
+            }
+          />
+          <StatTile
+            label="Lãi gộp"
+            value={money(cur.gross)}
+            note={
+              <>
+                Trừ giá vốn {moneyShort(cur.cogs)} và hàng hủy
+                <Change now={cur.gross} before={old.gross} prefix=" · " />
+              </>
+            }
+            tone={cur.gross >= 0 ? 'good' : 'bad'}
+          />
+          <StatTile
+            label="Hàng hủy"
+            value={money(cur.wasteCost)}
+            note={wasteQty ? `${wasteQty} phần · ${num((wasteQty / made) * 100, 1)}% số làm ra` : 'Không có'}
+            tone={made && wasteQty / made > 0.05 ? 'bad' : undefined}
+          />
+          <StatTile label="Hao hụt kiểm kê" value={money(shrink)} note={counts.length ? `${counts.length} lần kiểm` : 'Chưa kiểm kê trong kỳ'} />
+          <StatTile label="Chi phí khác" value={money(other)} />
+          <StatTile label="Lãi ước tính" value={money(net)} note="Lãi gộp − hao hụt − chi phí khác" tone={net >= 0 ? 'good' : 'bad'} />
+          <StatTile label="Tiền nhập nguyên liệu" value={money(bought)} />
+          <StatTile label="Lãi dòng tiền" value={money(cash)} note="Doanh thu − nhập hàng − chi phí khác" tone={cash >= 0 ? 'good' : 'bad'} />
+          {closings.length > 0 && (
+            <StatTile
+              label="Tiền mặt / chuyển khoản"
+              value={`${moneyShort(sum(closings, (r) => Number(r.cash)))} / ${moneyShort(sum(closings, (r) => Number(r.transfer)))}`}
+              note={`${closings.length} ngày đã chốt tiền`}
+            />
+          )}
+          {other > 0 && perCup > 0 && (
+            <StatTile
+              label="Điểm hòa vốn"
+              value={`${num(Math.ceil(needPerDay))} phần/ngày`}
+              note={`Đang bán ${num(soldPerDay, 1)} phần/ngày · lãi gộp TB ${moneyShort(perCup)}/phần`}
+              tone={soldPerDay >= needPerDay ? 'good' : 'bad'}
+            />
+          )}
+        </div>
+      )}
 
       {days.length > 1 && days.length <= 62 && (
         <section className="section">
@@ -343,6 +395,31 @@ function Report({ data, range }) {
       </section>
     </>
   )
+}
+
+// Vài câu nhận xét dễ hiểu cho người không rành số liệu
+function insights({ cur, old, net, top, other, perCup, needPerDay, soldPerDay, wasteQty, made }) {
+  if (cur.cups === 0) return [{ text: 'Chưa có số bán trong khoảng thời gian này.' }]
+  const out = []
+  if (old.revenue > 0) {
+    const pct = ((cur.revenue - old.revenue) / old.revenue) * 100
+    if (Math.abs(pct) >= 1)
+      out.push({
+        text: `Bán được ${pct > 0 ? 'nhiều hơn' : 'ít hơn'} kỳ trước ${num(Math.abs(pct), 0)}%.`,
+        tone: pct > 0 ? 'good' : 'danger',
+      })
+    else out.push({ text: 'Bán được gần bằng kỳ trước.' })
+  }
+  if (perCup > 0) out.push({ text: `Mỗi phần bán ra lãi trung bình ${money(perCup)} (chưa trừ chi phí khác).` })
+  if (net < 0) {
+    out.push({ text: `Đang lỗ ${money(-net)}: chi phí khác (${money(other)}) nhiều hơn tiền lãi từ bán hàng.`, tone: 'danger' })
+    if (needPerDay > 0)
+      out.push({ text: `Cần bán khoảng ${num(Math.ceil(needPerDay))} phần/ngày để hòa vốn (đang bán ${num(soldPerDay, 1)} phần/ngày).` })
+  }
+  if (top[0]) out.push({ text: `Bán chạy nhất: ${top[0].name} (${num(top[0].qty)} phần).` })
+  if (made > 0 && wasteQty / made > 0.05)
+    out.push({ text: `Hàng hủy hơi nhiều (${num((wasteQty / made) * 100, 0)}% số làm ra), nên nấu ít lại một chút.`, tone: 'danger' })
+  return out
 }
 
 function exportExcel(range, data) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Trash2 } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
-import { Field, Modal, MoneyInput, PageHeader } from '../components/ui'
+import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
 import { linesTotal, orderItemsText, orderSource, syncOrderSales } from '../lib/orders'
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
@@ -406,9 +406,7 @@ export function OrderForm({ order, onClose, onSaved }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary" disabled={busy}>
-            {busy ? 'Đang lưu…' : 'Lưu'}
-          </button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>
@@ -418,9 +416,9 @@ export function OrderForm({ order, onClose, onSaved }) {
 function NoteForm({ note, onClose, onSaved }) {
   const [date, setDate] = useState(note.date || todayStr())
   const [content, setContent] = useState(note.content || '')
+  const [busy, onSubmit] = useSubmit(submit)
 
-  async function submit(e) {
-    e.preventDefault()
+  async function submit() {
     const payload = { date, content: content.trim() }
     const { error } = note.id
       ? await supabase.from('notes').update(payload).eq('id', note.id)
@@ -430,7 +428,7 @@ function NoteForm({ note, onClose, onSaved }) {
 
   return (
     <Modal title={note.id ? 'Sửa ghi chú' : 'Ghi chú mới'} onClose={onClose}>
-      <form className="form" onSubmit={submit}>
+      <form className="form" onSubmit={onSubmit}>
         <Field label="Ngày">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         </Field>
@@ -441,7 +439,7 @@ function NoteForm({ note, onClose, onSaved }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary">Lưu</button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>

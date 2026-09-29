@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Receipt } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { fmtDate, money, periodRange, todayStr } from '../lib/format'
-import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker } from '../components/ui'
+import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton, useSubmit } from '../components/ui'
 
 const CATEGORIES = ['Mặt bằng', 'Điện', 'Nước', 'Gas', 'Lương nhân viên', 'Bao bì', 'Quảng cáo', 'Sửa chữa', 'Khác']
 
@@ -100,9 +100,9 @@ function ExpenseForm({ expense, onClose, onSaved }) {
     note: expense.note || '',
   })
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const [busy, onSubmit] = useSubmit(submit)
 
-  async function submit(e) {
-    e.preventDefault()
+  async function submit() {
     const payload = { ...form, amount: Number(form.amount || 0), note: form.note.trim() || null }
     const { error } = expense.id
       ? await supabase.from('expenses').update(payload).eq('id', expense.id)
@@ -118,7 +118,7 @@ function ExpenseForm({ expense, onClose, onSaved }) {
 
   return (
     <Modal title={expense.id ? 'Sửa chi phí' : 'Thêm chi phí'} onClose={onClose}>
-      <form className="form" onSubmit={submit}>
+      <form className="form" onSubmit={onSubmit}>
         <div className="form-row">
           <Field label="Ngày">
             <input type="date" value={form.date} onChange={(e) => set('date', e.target.value)} required />
@@ -146,7 +146,7 @@ function ExpenseForm({ expense, onClose, onSaved }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary">Lưu</button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>

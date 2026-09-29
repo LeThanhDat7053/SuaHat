@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut, Wheat } from 'lucide-react'
+import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut, Wheat, CircleQuestionMark } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 export const NAV = [
@@ -10,6 +10,7 @@ export const NAV = [
   { to: '/nguyen-lieu', label: 'Nguyên liệu & tồn kho', icon: Wheat },
   { to: '/san-pham', label: 'Sản phẩm & công thức', icon: CupSoda },
   { to: '/chi-phi', label: 'Chi phí khác', icon: Receipt },
+  { to: '/huong-dan', label: 'Cách dùng', icon: CircleQuestionMark },
 ]
 
 export function logout() {
@@ -21,7 +22,7 @@ export default function Layout({ children }) {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/favicon.svg" alt="" width="36" height="36" />
+          <img src="/logo.png" alt="" width="40" height="40" />
           <span>Quán Sữa Hạt</span>
         </div>
         <nav>

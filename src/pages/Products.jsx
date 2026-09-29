@@ -4,7 +4,7 @@ import { Copy, CupSoda, FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { BIG_UNIT, fmtQty, money, num } from '../lib/format'
 import { batchCost, productCost, toMap } from '../lib/cost'
-import { Empty, Field, Loading, Modal, MoneyInput, PageHeader } from '../components/ui'
+import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton } from '../components/ui'
 
 export const DEFAULT_MARGIN = 40
 
@@ -361,9 +361,7 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary" disabled={busy}>
-            {busy ? 'Đang lưu…' : 'Lưu'}
-          </button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>
@@ -571,9 +569,7 @@ function RecipeForm({ recipe, ingredients, products, onClose, onSaved, onDuplica
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary" disabled={busy}>
-            {busy ? 'Đang lưu…' : 'Lưu'}
-          </button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>

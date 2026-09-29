@@ -23,7 +23,7 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
-        <img src="/favicon.svg" alt="" width="56" height="56" className="login-logo" />
+        <img src="/logo.png" alt="Motra Sữa hạt" width="150" height="150" className="login-logo" />
         <h1>Quán Sữa Hạt</h1>
         <p className="muted">Đăng nhập để quản lý quán</p>
         <label className="field">

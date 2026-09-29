@@ -3,7 +3,7 @@ import { ClipboardCheck, Plus, Trash2, Wheat } from 'lucide-react'
 import { fetchAll, showError, supabase } from '../lib/supabase'
 import { loadStock } from '../lib/stock'
 import { BIG_UNIT, fmtDate, fmtQty, money, todayStr, unitMoney, unitPrice } from '../lib/format'
-import { Empty, Field, Loading, Modal, PageHeader, StatTile } from '../components/ui'
+import { Empty, Field, Loading, Modal, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 
 // Đơn vị dùng trong công thức. Hạt/bột dùng g, nước/sữa dùng ml — lúc mua vẫn nhập theo kg / lít được.
 export const UNITS = ['g', 'ml', 'cái', 'hộp', 'gói', 'chai']
@@ -285,9 +285,9 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary" disabled={busy || !expected}>
-            {busy ? 'Đang lưu…' : 'Lưu kiểm kê'}
-          </button>
+          <SaveButton busy={busy} disabled={!expected}>
+            Lưu kiểm kê
+          </SaveButton>
         </div>
       </form>
     </Modal>
@@ -314,9 +314,9 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
   })
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const big = BIG_UNIT[form.unit]
+  const [busy, onSubmit] = useSubmit(submit)
 
-  async function submit(e) {
-    e.preventDefault()
+  async function submit() {
     const payload = {
       name: form.name.trim(),
       unit: form.unit,
@@ -337,7 +337,7 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
 
   return (
     <Modal title={ingredient.id ? 'Sửa nguyên liệu' : 'Thêm nguyên liệu'} onClose={onClose}>
-      <form className="form" onSubmit={submit}>
+      <form className="form" onSubmit={onSubmit}>
         <Field label="Tên nguyên liệu">
           <input value={form.name} onChange={(e) => set('name', e.target.value)} required placeholder="VD: Hạnh nhân" />
         </Field>
@@ -376,7 +376,7 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary">Lưu</button>
+          <SaveButton busy={busy} />
         </div>
       </form>
     </Modal>

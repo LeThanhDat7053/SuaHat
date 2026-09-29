@@ -2,13 +2,14 @@
 
 App web (cài được lên màn hình điện thoại như app thật) để:
 
-- **Tổng quan**: doanh thu, lãi gộp, hàng hủy, hao hụt, lãi ước tính, lãi dòng tiền, tiền mặt / chuyển khoản, điểm hòa vốn; so với kỳ trước; cảnh báo sắp hết hàng / lãi mỏng; **xuất Excel**.
+- **Tổng quan**: 3 số chính (Bán được · Lãi · Tiền còn lại) + nhận xét dễ hiểu; bấm “Xem chi tiết” để xem doanh thu, lãi gộp, hàng hủy, hao hụt, lãi ước tính, lãi dòng tiền, tiền mặt / chuyển khoản, điểm hòa vốn; so với kỳ trước; cảnh báo sắp hết hàng / lãi mỏng; **xuất Excel**.
 - **Bán hàng**: mỗi ngày bấm +/− số phần bán, tự lưu; ghi **tặng**, **giảm giá**, **hàng hủy**; **chốt tiền cuối ngày** (tiền mặt + chuyển khoản, báo chênh lệch).
 - **Lịch đơn**: đơn đặt trước chọn món từ menu, tự tính tiền; bấm **Đã giao** là tự ghi vào doanh thu.
 - **Nhập hàng**: một lần đi chợ nhập nhiều món, mua theo kg / lít; giá nguyên liệu tự tính **bình quân**.
 - **Nguyên liệu & tồn kho**: tồn kho tự trừ theo số bán × công thức; **kiểm kê** để biết hao hụt; báo sắp hết.
 - **Sản phẩm & công thức**: **công thức theo mẻ** (1 mẻ ra bao nhiêu ml) → nhiều size dùng chung 1 công thức → tự tính giá vốn, lãi mỗi phần.
 - **Chi phí khác**: mặt bằng, điện, nước, lương… (xem theo ngày / tuần / tháng).
+- **Cách dùng**: hướng dẫn ngắn ngay trong app cho người mới (menu Khác → Cách dùng).
 
 Đăng nhập: **admin / adminmotra**. Máy sẽ nhớ đăng nhập cho tới khi bấm **Đăng xuất**.
 
@@ -114,5 +115,5 @@ src/
   pages/               Dashboard, Sales, CalendarPage, Purchases, Ingredients, Products, Expenses
 supabase/schema.sql    cấu trúc database
 supabase/nang-cap-v2.sql  nâng cấp database (mẻ, tồn kho, hủy, chốt tiền…)
-scripts/make-icons.mjs tạo icon PWA (npm run icons)
+public/                logo.png + icon cài app (tạo từ logo gốc)
 ```

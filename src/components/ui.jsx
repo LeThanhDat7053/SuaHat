@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { addDays, fmtDateLong, periodLabel, periodRange, shiftPeriod, todayStr } from '../lib/format'
 
@@ -37,6 +37,40 @@ export function Modal({ title, onClose, children }) {
         <div className="modal-body">{children}</div>
       </div>
     </div>
+  )
+}
+
+// Bọc hàm lưu của form: chặn bấm 2 lần, trả về `busy` để hiện "Đang lưu…"
+export function useSubmit(fn) {
+  const [busy, setBusy] = useState(false)
+  const running = useRef(false)
+  async function onSubmit(e) {
+    e?.preventDefault()
+    if (running.current) return
+    running.current = true
+    setBusy(true)
+    try {
+      await fn(e)
+    } finally {
+      running.current = false
+      setBusy(false)
+    }
+  }
+  return [busy, onSubmit]
+}
+
+// Nút Lưu: đang lưu thì hiện vòng xoay + không bấm được nữa
+export function SaveButton({ busy, children = 'Lưu', busyText = 'Đang lưu…', disabled, ...rest }) {
+  return (
+    <button className="btn btn-primary" disabled={busy || disabled} aria-busy={busy || undefined} {...rest}>
+      {busy ? (
+        <>
+          <span className="spinner" aria-hidden="true" /> {busyText}
+        </>
+      ) : (
+        children
+      )}
+    </button>
   )
 }
 

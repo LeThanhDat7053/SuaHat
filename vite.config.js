@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon-32.png', 'apple-touch-icon.png', 'logo.png'],
       manifest: {
         name: 'Quản lý Quán Sữa Hạt',
         short_name: 'Sữa Hạt',
@@ -22,7 +22,7 @@ export default defineConfig({
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

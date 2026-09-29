@@ -5,7 +5,7 @@ import { showError, supabase } from '../lib/supabase'
 import { loadStock } from '../lib/stock'
 import { avgPrice } from '../lib/cost'
 import { BIG_UNIT, fmtDate, fmtQty, money, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
-import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker } from '../components/ui'
+import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton } from '../components/ui'
 import { UNITS } from './Ingredients'
 
 export default function Purchases() {
@@ -300,9 +300,7 @@ function PurchaseForm({ onClose, onSaved }) {
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Hủy
             </button>
-            <button className="btn btn-primary" disabled={busy}>
-              {busy ? 'Đang lưu…' : 'Lưu'}
-            </button>
+            <SaveButton busy={busy} />
           </div>
         </form>
       )}
