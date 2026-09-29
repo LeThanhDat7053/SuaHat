@@ -101,11 +101,12 @@ begin
   insert into sample_rows select 'products', unnest(array[p_dieu500, p_dieu330, p_hanhnhan, p_occho, p_daunanh, p_yenmach]);
 
   -- ---------------------------------------------------------------
-  -- 4) KIỂM KÊ ĐẦU KỲ (8 ngày trước) — tồn kho tính từ đây
+  -- 4) KIỂM KÊ ĐẦU KỲ (tối 8 ngày trước) — tồn kho tính từ đây
   --    hạt điều & đường lệch sổ sách một chút để thấy "hao hụt"
   -- ---------------------------------------------------------------
   with ins as (
-    insert into stock_counts (date, ingredient_id, counted, expected, unit_price, note) values
+    insert into stock_counts (date, ingredient_id, counted, expected, unit_price, note, created_at)
+    select date, ingredient_id, counted, expected, unit_price, note, date + time '21:00' from (values
       (current_date - 8, i_dieu,     2000,  2150, 280, 'Kiểm kê đầu kỳ'),
       (current_date - 8, i_hanhnhan, 1500,  1500, 320, 'Kiểm kê đầu kỳ'),
       (current_date - 8, i_occho,    2500,  2500, 400, 'Kiểm kê đầu kỳ'),
@@ -117,15 +118,18 @@ begin
       (current_date - 8, i_nuoc,    20000, 20000, 1,   'Kiểm kê đầu kỳ'),
       (current_date - 8, i_chai500,   200,   200, 1500, 'Kiểm kê đầu kỳ'),
       (current_date - 8, i_chai330,   100,   100, 1200, 'Kiểm kê đầu kỳ')
+    ) v(date, ingredient_id, counted, expected, unit_price, note)
     returning id
   )
   insert into sample_rows select 'stock_counts', id from ins;
 
   -- ---------------------------------------------------------------
   -- 5) NHẬP HÀNG — mua theo kg / lít, app lưu theo g / ml
+  --    (giờ lưu = 10h sáng ngày mua; lần lưu sau lúc kiểm kê mới cộng vào tồn)
   -- ---------------------------------------------------------------
   with ins as (
-    insert into purchases (date, ingredient_id, item_name, quantity, unit, total, note) values
+    insert into purchases (date, ingredient_id, item_name, quantity, unit, total, note, created_at)
+    select date, ingredient_id, item_name, quantity, unit, total, note, date + time '10:00' from (values
       (current_date - 20, i_dieu,     'Hạt điều',             3000, 'g',   810000, 'Chợ Bà Chiểu'),
       (current_date - 20, i_daunanh,  'Đậu nành',             5000, 'g',   175000, null),
       (current_date - 18, i_occho,    'Óc chó',               2000, 'g',   800000, null),
@@ -139,6 +143,7 @@ begin
       (current_date - 3,  i_hanhnhan, 'Hạnh nhân',            2000, 'g',   640000, null),
       (current_date - 2,  i_suatuoi,  'Sữa tươi không đường', 6000, 'ml',  210000, null),
       (current_date - 2,  i_nuoc,     'Nước lọc (bình 20L)', 60000, 'ml',   60000, '3 bình')
+    ) v(date, ingredient_id, item_name, quantity, unit, total, note)
     returning id
   )
   insert into sample_rows select 'purchases', id from ins;

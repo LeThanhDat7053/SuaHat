@@ -2,10 +2,11 @@ import { fetchAll, supabase } from './supabase'
 import { productUsage, toMap } from './cost'
 
 // Tồn kho từng nguyên liệu =
-//   số kiểm kê gần nhất (cuối ngày kiểm kê; chưa kiểm kê thì tính từ 0)
-//   + nhập hàng sau ngày đó
-//   − lượng đã dùng sau ngày đó (bán + tặng + hủy, nhân theo công thức hiện tại)
-// `until`: chỉ tính đến hết ngày này (dùng khi kiểm kê một ngày đã qua)
+//   số kiểm kê gần nhất (chưa kiểm kê thì tính từ 0)
+//   + nhập hàng được LƯU SAU lúc bấm lưu kiểm kê (theo thời điểm lưu, không theo ngày ghi)
+//   − lượng đã dùng SAU ngày kiểm kê (bán + tặng + hủy, nhân theo công thức)
+// Số kiểm kê = hàng còn lại CUỐI ngày kiểm kê (số bán ngày đó đã nằm trong số đếm).
+// `until`: chỉ trừ số bán đến hết ngày này (dùng khi đang kiểm kê)
 export async function loadStock(until) {
   const [ing, prod, rec, cnt] = await Promise.all([
     supabase.from('ingredients').select('*').order('name'),
@@ -23,8 +24,10 @@ export async function loadStock(until) {
   cnt.data.forEach((c) => (lastCount[c.ingredient_id] = c))
 
   // chỉ cần dữ liệu từ lần kiểm kê cũ nhất trở đi
-  const dates = ing.data.map((g) => lastCount[g.id]?.date)
-  const since = dates.length && dates.every(Boolean) ? dates.sort()[0] : null
+  const counted = ing.data.map((g) => lastCount[g.id]).filter(Boolean)
+  const all = counted.length > 0 && counted.length === ing.data.length
+  const since = all ? counted.map((c) => c.date).sort()[0] : null
+  const sinceTs = all ? counted.map((c) => c.created_at).sort()[0] : null
   const q = (table, cols) =>
     fetchAll(() => {
       let b = supabase.from(table).select(cols).order('id')
@@ -32,7 +35,10 @@ export async function loadStock(until) {
       return since ? b.gt('date', since) : b
     })
   const [pur, sal, wst] = await Promise.all([
-    q('purchases', 'ingredient_id,date,quantity'),
+    fetchAll(() => {
+      const b = supabase.from('purchases').select('ingredient_id,quantity,created_at').order('id')
+      return sinceTs ? b.gt('created_at', sinceTs) : b
+    }),
     q('sales', 'product_id,date,quantity,gift_qty'),
     q('waste', 'product_id,date,quantity'),
   ])
@@ -41,8 +47,9 @@ export async function loadStock(until) {
   const stock = {}
   ing.data.forEach((g) => (stock[g.id] = Number(lastCount[g.id]?.counted || 0)))
   const counts = (id, date) => id in stock && (!lastCount[id] || date > lastCount[id].date)
+  const boughtAfter = (id, ts) => id in stock && (!lastCount[id] || ts > lastCount[id].created_at)
 
-  pur.data.forEach((p) => counts(p.ingredient_id, p.date) && (stock[p.ingredient_id] += Number(p.quantity)))
+  pur.data.forEach((p) => boughtAfter(p.ingredient_id, p.created_at) && (stock[p.ingredient_id] += Number(p.quantity)))
 
   const prodMap = toMap(prod.data)
   const recMap = toMap(rec.data)

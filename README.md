@@ -84,7 +84,7 @@ App sẽ mở toàn màn hình như app bình thường và tự cập nhật kh
 - **Lịch đơn**: khách đặt trước → chọn món. Giao xong bấm **Đã giao** → tự vào doanh thu (không cần nhập lại ở Bán hàng).
 - **Chi phí khác**: tiền nhà, điện nước, lương…
 
-**Mỗi tuần (khuyên dùng):** **Kiểm kê** cuối ngày (sau khi nhập xong bán hàng) → biết hao hụt, tồn kho chính xác lại.
+**Vài ngày / mỗi tuần (khuyên dùng):** **Kiểm kê** (tối, sau khi bán xong) → cân / đếm hàng còn lại, nhập vào; tồn kho tính lại theo đúng số này. App so với sổ sách → biết hao hụt, tồn kho đúng lại. Hàng mua về ghi Nhập hàng sau lúc kiểm kê thì được cộng thêm vào tồn.
 
 **Hiểu các con số ở Tổng quan:**
 - **Lãi gộp** = Doanh thu − giá vốn (gồm phần tặng) − hàng hủy.

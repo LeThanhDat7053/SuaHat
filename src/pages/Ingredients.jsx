@@ -96,14 +96,21 @@ function StockList({ data, onEdit }) {
                   {g.name} {isLow && <span className="badge badge-bad">Sắp hết</span>}
                 </div>
                 <div className="muted small">
-                  {unitPrice(g.price_per_unit, g.unit)}
+                  Giá {unitPrice(g.price_per_unit, g.unit)}
                   {lastCount[g.id] ? ` · kiểm kê ${fmtDate(lastCount[g.id].date)}` : ' · chưa kiểm kê'}
+                  {g.min_stock > 0 && ` · báo khi dưới ${fmtQty(g.min_stock, g.unit)}`}
                 </div>
               </div>
               <div className="align-right">
-                <strong className={s < 0 ? 'danger-text' : ''}>{fmtQty(s, g.unit)}</strong>
-                {s < 0 && <span className="muted small block">Chưa kiểm kê hoặc quên ghi nhập hàng</span>}
-                {g.min_stock > 0 && s >= 0 && <span className="muted small block">báo khi dưới {fmtQty(g.min_stock, g.unit)}</span>}
+                <div className={`stock-qty ${s < 0 ? 'danger-text' : ''}`}>
+                  <span className="muted small">Còn </span>
+                  {fmtQty(s, g.unit)}
+                </div>
+                {s < 0 ? (
+                  <span className="muted small block">Chưa kiểm kê hoặc quên ghi nhập hàng</span>
+                ) : (
+                  <span className="stock-value">Trị giá {money(s * g.price_per_unit)}</span>
+                )}
               </div>
             </button>
           )
@@ -180,6 +187,7 @@ function CountHistory({ onChanged }) {
 }
 
 function StockCountForm({ ingredients, onClose, onSaved }) {
+  // số đếm = hàng còn lại cuối ngày `date` (đã trừ số bán của ngày đó)
   const [date, setDate] = useState(todayStr())
   const [expected, setExpected] = useState(null)
   const [values, setValues] = useState({})
@@ -219,7 +227,7 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
   return (
     <Modal title="Kiểm kê kho" onClose={onClose}>
       <form className="form" onSubmit={submit}>
-        <Field label="Kiểm kê vào cuối ngày" hint="Nên làm sau khi đã nhập xong bán hàng. Kiểm kê buổi sáng trước khi bán thì chọn ngày hôm qua.">
+        <Field label="Ngày kiểm kê" hint="Số đếm được là hàng còn lại cuối ngày này. Từ đó tồn kho tính lại theo đúng số này.">
           <input type="date" value={date} max={todayStr()} onChange={(e) => e.target.value && setDate(e.target.value)} required />
         </Field>
         <p className="muted small">Cân / đếm hàng thực tế rồi nhập vào. Món nào không kiểm thì để trống.</p>

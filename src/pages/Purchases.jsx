@@ -9,7 +9,7 @@ import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker } fr
 import { UNITS } from './Ingredients'
 
 export default function Purchases() {
-  const [period, setPeriod] = useState({ mode: 'week', date: todayStr() })
+  const [period, setPeriod] = useState({ mode: 'day', date: todayStr() })
   const [purchases, setPurchases] = useState(null)
   const [adding, setAdding] = useState(false)
 

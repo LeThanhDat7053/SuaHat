@@ -89,7 +89,8 @@ export const unitMoney = (n) => num(n, 2) + 'đ'
 // 5000 g → "5 kg", 250 g → "250 g"
 export function fmtQty(q, unit) {
   const big = BIG_UNIT[unit]
-  if (big && Math.abs(q) >= 1000) return `${num(q / 1000, 3)} ${big}`
+  // so sau khi làm tròn: 999,999 g hiện là "1 kg" chứ không phải "1.000 g"
+  if (big && Math.abs(Math.round(q * 100) / 100) >= 1000) return `${num(q / 1000, 3)} ${big}`
   return `${num(q)} ${unit}`
 }
 

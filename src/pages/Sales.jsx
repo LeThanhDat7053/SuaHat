@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Minus, Plus, CupSoda, Ellipsis, Wallet } from 'lucide-react'
+import { Minus, Plus, CupSoda, Ellipsis, Wallet, Trash2 } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
@@ -145,6 +145,12 @@ export default function Sales() {
     })
   }
 
+  async function removeRow(r) {
+    if (!confirm(`Xóa ${r.quantity} phần "${r.product_name}" khỏi doanh thu ngày này?`)) return
+    const { error } = await supabase.from('sales').delete().eq('id', r.id)
+    if (!showError(error)) setDayRows((prev) => prev.filter((x) => x.id !== r.id))
+  }
+
   if (!products) return <Loading />
 
   const activeIds = new Set(products.map((p) => p.id))
@@ -255,6 +261,9 @@ export default function Sales() {
               <span>
                 {r.quantity} × {money(r.unit_price)}
               </span>
+              <button className="icon-btn" onClick={() => removeRow(r)} aria-label={`Xóa ${r.product_name}`}>
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
         </div>

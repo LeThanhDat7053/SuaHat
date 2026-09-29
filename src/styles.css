@@ -557,3 +557,22 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .alert-row { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 0.9rem; flex-wrap: wrap; }
 
 .plan-input { width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; text-align: right; background: var(--surface); }
+.grid-qty { width: 150px; flex-shrink: 0; }
+.grid-qty input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; min-height: 40px; background: var(--surface); }
+.field .grid-qty select { width: auto; min-width: 58px; min-height: 40px; padding: 8px 6px; }
+.grid-unit { min-width: 58px; text-align: center; font-size: 0.9rem; }
+.count-row.is-used { background: var(--primary-soft); }
+.stock-qty { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stock-qty .muted { font-weight: 400; }
+.stock-value {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
