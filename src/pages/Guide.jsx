@@ -79,8 +79,11 @@ export default function Guide() {
         </Section>
 
         <Section icon={Wallet} title="Buổi tối — chốt sổ" when="Mỗi ngày, làm theo thứ tự">
-          <Step n="1" title="Chốt tiền" to="/ban-hang">
-            Cuối trang <b>Bán hàng</b>: gõ tiền mặt trong két và tiền chuyển khoản → app báo khớp hay thiếu / dư.
+          <Step n="1" title="Chốt tiền (không bắt buộc)" to="/ban-hang">
+            Cuối trang <b>Bán hàng</b>: đếm tiền thật trong két và xem app ngân hàng, gõ vào → app so với doanh thu trên sổ và báo{' '}
+            <b>khớp</b> hay <b>thiếu / dư</b>.
+            <br />
+            Đây chỉ là bước <b>kiểm tra lại</b>, số tiền gõ vào <b>không cộng</b> vào doanh thu.
           </Step>
           <Step n="2" title="Kiểm kê (vài ngày 1 lần)" to="/nguyen-lieu">
             Cân / đếm hàng <b>còn lại</b> → <Btn icon={ClipboardCheck}>Kiểm kê</Btn>. Không cần kiểm hết, chỉ cần các loại hạt đắt tiền.
@@ -132,6 +135,12 @@ export default function Guide() {
               <b>Sao giá nguyên liệu không bằng giá lần mua mới nhất?</b>
               <br />
               App tính <b>giá bình quân</b> của hàng cũ còn trong kho và hàng mới mua. Mua giá rẻ dần thì giá bình quân cũng giảm dần theo.
+            </p>
+            <p>
+              <b>Chốt tiền có bị cộng dồn vào doanh thu không?</b>
+              <br />
+              <b>Không.</b> Doanh thu chỉ tính từ số phần bán ở trang Bán hàng. Ô chốt tiền chỉ để so tiền thật với sổ, xem có thiếu hụt
+              hay thối nhầm không. Không dùng cũng được.
             </p>
             <p>
               <b>Lỡ bấm sai số bán?</b>

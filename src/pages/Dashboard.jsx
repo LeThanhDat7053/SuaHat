@@ -335,7 +335,7 @@ function Report({ data, range }) {
             <StatTile
               label="Tiền mặt / chuyển khoản"
               value={`${moneyShort(sum(closings, (r) => Number(r.cash)))} / ${moneyShort(sum(closings, (r) => Number(r.transfer)))}`}
-              note={`${closings.length} ngày đã chốt tiền`}
+              note={`${closings.length} ngày đã chốt · chỉ để đối chiếu, không cộng vào doanh thu`}
             />
           )}
           {other > 0 && perCup > 0 && (

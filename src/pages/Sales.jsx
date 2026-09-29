@@ -382,11 +382,14 @@ function DayClosing({ date, revenue, deposits }) {
         </h2>
         {saved && <span className="badge badge-good">Đã chốt</span>}
       </div>
+      <p className="muted small">
+        Chỉ để <b>đối chiếu</b> tiền thật với sổ — <b>không cộng</b> vào doanh thu. Không dùng cũng được, cứ để trống.
+      </p>
       <div className="form-row">
-        <Field label="Tiền mặt thu trong ngày">
+        <Field label="Tiền mặt đang có trong két" hint="Đếm tiền thật, trừ tiền vốn để sẵn đầu ngày">
           <MoneyInput value={form.cash} onChange={(v) => setForm({ ...form, cash: v })} />
         </Field>
-        <Field label="Chuyển khoản nhận được">
+        <Field label="Chuyển khoản nhận được" hint="Xem trong app ngân hàng">
           <MoneyInput value={form.transfer} onChange={(v) => setForm({ ...form, transfer: v })} />
         </Field>
       </div>

@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt', // tự cập nhật do src/lib/pwa.js lo, để kiểm soát lúc tải lại
+      injectRegister: null,
       includeAssets: ['favicon-32.png', 'apple-touch-icon.png', 'logo.png'],
       manifest: {
         name: 'Quản lý Quán Sữa Hạt',
@@ -27,6 +28,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
