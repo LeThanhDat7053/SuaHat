@@ -4,6 +4,7 @@ import { Copy, CupSoda, FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { BIG_UNIT, fmtQty, money, num } from '../lib/format'
 import { batchCost, productCost, toMap } from '../lib/cost'
+import { CHAI_DEFAULTS, getChaiDefaults } from '../lib/quick'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton } from '../components/ui'
 
 export const DEFAULT_MARGIN = 40
@@ -235,9 +236,15 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
     volume_ml: product.volume_ml || (product.id ? '' : 500),
     extra_cost: product.extra_cost ?? '',
     active: product.active ?? true,
+    chai_surcharge: product.chai_surcharge ?? '',
+    chai_cost: product.chai_cost ?? '',
     recipe: product.recipe?.length ? product.recipe : [{ ingredient_id: '', amount: '' }],
   })
   const [busy, setBusy] = useState(false)
+  const [chaiDef, setChaiDef] = useState(CHAI_DEFAULTS)
+  useEffect(() => {
+    getChaiDefaults().then(setChaiDef)
+  }, [])
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const ingMap = toMap(ingredients)
   const recMap = toMap(recipes)
@@ -259,6 +266,8 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
     e.preventDefault()
     setBusy(true)
     const payload = { name: form.name.trim(), price: Number(form.price || 0), active: form.active, ...draft }
+    // chỉ gửi cột Chai khi đã có (đã chạy nang-cap-v3.sql) hoặc có gõ giá trị
+    for (const k of ['chai_surcharge', 'chai_cost']) if (k in product || form[k] !== '') payload[k] = form[k] === '' ? null : Number(form[k])
     const { error } = product.id
       ? await supabase.from('products').update(payload).eq('id', product.id)
       : await supabase.from('products').insert(payload)
@@ -322,6 +331,15 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
           <MoneyInput value={form.extra_cost} onChange={(v) => set('extra_cost', v)} />
         </Field>
 
+        <div className="form-row">
+          <Field label="Bán Chai đắt hơn Ly" hint={`Để trống = mức chung ${money(chaiDef.surcharge)}`}>
+            <MoneyInput value={form.chai_surcharge} onChange={(v) => set('chai_surcharge', v)} placeholder={num(chaiDef.surcharge)} />
+          </Field>
+          <Field label="Vốn thêm khi bán Chai" hint={`Vỏ chai, nắp… Để trống = mức chung ${money(chaiDef.cost)}`}>
+            <MoneyInput value={form.chai_cost} onChange={(v) => set('chai_cost', v)} placeholder={num(chaiDef.cost)} />
+          </Field>
+        </div>
+
         <div className="summary-box">
           {fromBatch > 0 && (
             <div className="kv">
@@ -336,7 +354,7 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
             </div>
           )}
           <div className="kv">
-            <span>Giá vốn / phần</span>
+            <span>Giá vốn / phần (Ly)</span>
             <strong>{money(cost)}</strong>
           </div>
           <div className="kv">

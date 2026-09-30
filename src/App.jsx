@@ -12,6 +12,7 @@ import Expenses from './pages/Expenses'
 import More from './pages/More'
 import Ingredients from './pages/Ingredients'
 import Guide from './pages/Guide'
+import QuickOrders from './pages/QuickOrders'
 
 export default function App() {
   if (!isConfigured) return <SetupNeeded />
@@ -36,6 +37,7 @@ function AuthedApp() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/ban-hang" element={<Sales />} />
+          <Route path="/don" element={<QuickOrders />} />
           <Route path="/lich" element={<CalendarPage />} />
           <Route path="/nhap-hang" element={<Purchases />} />
           <Route path="/san-pham" element={<Products />} />

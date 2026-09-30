@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Minus, Plus, CupSoda, Ellipsis, Wallet, Trash2 } from 'lucide-react'
+import { CupSoda, Ellipsis, Wallet, Trash2, ClipboardList, ClipboardPlus } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
+import { CHAI_DEFAULTS, addLines, completeQuickOrder, getChaiDefaults, linesTotal, missingTable, packText } from '../lib/quick'
+import { DraftPanel, OrderCard, PackPicker, PriceForm, orderLabel } from '../components/QuickOrder'
 import { DateNav, Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 
 const isEmptyRow = (r) => !(r.quantity > 0) && !(r.gift_qty > 0) && !(Number(r.discount) > 0)
+
+// Đơn đang lập được giữ trong máy, tải lại trang không bị mất
+const DRAFT_KEY = 'quick-draft'
+const emptyDraft = () => ({ lines: [], note: '', editingId: null, date: null })
+function loadDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY))
+    return d && Array.isArray(d.lines) ? { ...emptyDraft(), ...d } : null
+  } catch {
+    return null
+  }
+}
 
 export default function Sales() {
   const [date, setDate] = useState(todayStr())
@@ -19,8 +33,17 @@ export default function Sales() {
   const [extra, setExtra] = useState(null) // món đang mở "Tặng / giảm / hủy"
   const [status, setStatus] = useState('')
 
+  const [chaiDef, setChaiDef] = useState(CHAI_DEFAULTS)
+  const [draft, setDraft] = useState(loadDraft) // null = không ở chế độ lập đơn
+  const [pending, setPending] = useState(null) // đơn đã chốt, đang chờ giao
+  const [needsUpgrade, setNeedsUpgrade] = useState(false)
+  const [picker, setPicker] = useState(null) // món đang chọn Ly / Chai
+  const [priceEdit, setPriceEdit] = useState(null)
+  const [busyOrder, setBusyOrder] = useState(null) // id đơn đang bấm "Đã xong"
+  const [draftBusy, setDraftBusy] = useState(false)
+
   const timers = useRef({})
-  const pending = useRef({})
+  const unsaved = useRef({})
 
   useEffect(() => {
     Promise.all([
@@ -32,7 +55,35 @@ export default function Sales() {
       setProducts(p.data)
       setCostCtx({ ing: toMap(i.data), rec: toMap(r.data) })
     })
+    getChaiDefaults().then(setChaiDef)
   }, [])
+
+  useEffect(() => {
+    try {
+      if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      else localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      /* máy chặn lưu trữ: bỏ qua */
+    }
+  }, [draft])
+
+  const loadPending = useCallback(async () => {
+    const { data, error } = await supabase.from('quick_orders').select('*').eq('status', 'pending').order('id')
+    if (missingTable(error)) return setNeedsUpgrade(true)
+    if (!showError(error)) setPending(data)
+  }, [])
+
+  // nhiều máy cùng bán: tự tải lại đơn chờ mỗi 20 giây và khi quay lại app
+  useEffect(() => {
+    loadPending()
+    const tick = () => document.visibilityState === 'visible' && loadPending()
+    const t = setInterval(tick, 20000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [loadPending])
 
   const save = useCallback(async (date, product, row) => {
     setStatus('saving')
@@ -57,11 +108,11 @@ export default function Sales() {
   }, [])
 
   const flush = useCallback(() => {
-    Object.entries(pending.current).forEach(([id, job]) => {
+    Object.entries(unsaved.current).forEach(([id, job]) => {
       clearTimeout(timers.current[id])
       save(job.date, job.product, job.row)
     })
-    pending.current = {}
+    unsaved.current = {}
   }, [save])
 
   // lưu ngay những thay đổi chưa kịp lưu khi rời trang
@@ -92,12 +143,14 @@ export default function Sales() {
     }
   }, [date, flush])
 
+  const lyCost = (product) => productCost(product, costCtx.ing, costCtx.rec)
+
   const newRow = (product) => ({
     quantity: 0,
     gift_qty: 0,
     discount: 0,
     unit_price: product.price,
-    unit_cost: productCost(product, costCtx.ing, costCtx.rec),
+    unit_cost: lyCost(product),
   })
 
   // patch: { quantity } hoặc { gift_qty, discount }
@@ -106,11 +159,11 @@ export default function Sales() {
     // giữ giá của lần nhập đầu tiên trong ngày để lịch sử không bị thay đổi
     const row = { ...(rows[product.id] || newRow(product)), product_id: product.id, product_name: product.name, source: '', ...patch }
     setRows((prev) => ({ ...prev, [product.id]: row }))
-    pending.current[product.id] = { date, product, row }
+    unsaved.current[product.id] = { date, product, row }
     clearTimeout(timers.current[product.id])
     timers.current[product.id] = setTimeout(() => {
-      const job = pending.current[product.id]
-      delete pending.current[product.id]
+      const job = unsaved.current[product.id]
+      delete unsaved.current[product.id]
       if (job) save(job.date, job.product, job.row)
     }, 500)
   }
@@ -127,7 +180,7 @@ export default function Sales() {
                 product_id: product.id,
                 product_name: product.name,
                 quantity,
-                unit_cost: waste[product.id]?.unit_cost ?? productCost(product, costCtx.ing, costCtx.rec),
+                unit_cost: waste[product.id]?.unit_cost ?? lyCost(product),
                 reason: reason || null,
               },
               { onConflict: 'date,product_id' },
@@ -151,6 +204,70 @@ export default function Sales() {
     if (!showError(error)) setDayRows((prev) => prev.filter((x) => x.id !== r.id))
   }
 
+  // ---------- Lập đơn nhanh ----------
+  function toggleDraft() {
+    if (!draft) return setDraft(emptyDraft())
+    if (draft.lines.length > 0 && !confirm(draft.editingId ? 'Bỏ các thay đổi của đơn đang sửa?' : 'Bỏ đơn đang lập?')) return
+    setDraft(null)
+  }
+
+  function addToDraft(lines) {
+    setDraft((d) => ({ ...(d || emptyDraft()), lines: addLines(d?.lines || [], lines) }))
+    setPicker(null)
+  }
+
+  // now = true: khách lấy liền → chốt và tính tiền luôn
+  async function submitDraft(now) {
+    const lines = draft.lines.filter((l) => l.qty > 0)
+    if (lines.length === 0) return
+    setDraftBusy(true)
+    const payload = { note: draft.note.trim() || null, lines, total: linesTotal(lines) }
+    const { data, error } = draft.editingId
+      ? await supabase.from('quick_orders').update(payload).eq('id', draft.editingId).eq('status', 'pending').select().maybeSingle()
+      : await supabase
+          .from('quick_orders')
+          .insert({ ...payload, date })
+          .select()
+          .single()
+    if (showError(error)) return setDraftBusy(false)
+    if (!data) {
+      setDraftBusy(false)
+      alert('Đơn này đã được bấm xong hoặc đã bị xóa ở máy khác.')
+      setDraft(null)
+      return loadPending()
+    }
+    if (now) {
+      const err = await completeQuickOrder(data)
+      if (showError(err)) {
+        setPending((p) => [...(p || []), data])
+      } else if (data.date === date) loadDay(date)
+    } else {
+      setPending((p) => (draft.editingId ? p.map((o) => (o.id === data.id ? data : o)) : [...(p || []), data]))
+    }
+    setDraftBusy(false)
+    setDraft(null)
+  }
+
+  async function markDone(order) {
+    setBusyOrder(order.id)
+    const error = await completeQuickOrder(order)
+    setBusyOrder(null)
+    if (showError(error)) return loadPending()
+    setPending((p) => p.filter((o) => o.id !== order.id))
+    if (order.date === date) loadDay(date)
+  }
+
+  function editOrder(order) {
+    if (draft?.lines.length > 0 && !confirm('Đang lập dở 1 đơn khác. Bỏ đơn đó để sửa đơn này?')) return
+    setDraft({ lines: order.lines, note: order.note || '', editingId: order.id, date: order.date })
+  }
+
+  async function deleteOrder(order) {
+    if (!confirm(`Xóa "${orderLabel(order)}" (${money(order.total)})? Đơn chưa giao nên không ảnh hưởng doanh thu.`)) return
+    const { error } = await supabase.from('quick_orders').delete().eq('id', order.id).eq('status', 'pending')
+    if (!showError(error)) setPending((p) => p.filter((o) => o.id !== order.id))
+  }
+
   if (!products) return <Loading />
 
   const activeIds = new Set(products.map((p) => p.id))
@@ -160,15 +277,29 @@ export default function Sales() {
   const hiddenRows = otherRows.filter((r) => r.source === '')
   const all = [...shopRows, ...otherRows]
   const totalQty = all.reduce((s, r) => s + r.quantity, 0)
+  const chaiQty = all.reduce((s, r) => s + (r.pack === 'chai' ? r.quantity : 0), 0)
   const revenue = all.reduce((s, r) => s + saleRevenue(r), 0)
   const cost = all.reduce((s, r) => s + saleCost(r), 0)
   const wasteList = Object.values(waste)
   const wasteQty = wasteList.reduce((s, r) => s + r.quantity, 0)
   const wasteCost = wasteList.reduce((s, r) => s + r.quantity * r.unit_cost, 0)
 
+  // số Ly / Chai đã bán của từng món trong ngày (bán cũ không ghi loại → tính là Ly)
+  const sold = {}
+  all.forEach((r) => {
+    if (!r.product_id) return
+    const s = (sold[r.product_id] ||= { ly: 0, chai: 0 })
+    s[r.pack === 'chai' ? 'chai' : 'ly'] += r.quantity
+  })
+  const inDraft = {}
+  draft?.lines.forEach((l) => {
+    const s = (inDraft[l.product_id] ||= { ly: 0, chai: 0 })
+    s[l.pack] += l.qty
+  })
+
   return (
     <>
-      <PageHeader title="Bán hàng" subtitle="Bấm vào món để cộng 1 phần. Dữ liệu tự lưu.">
+      <PageHeader title="Bán hàng" subtitle="Bấm vào món → chọn Ly / Chai. Dữ liệu tự lưu.">
         <span className={`save-status ${status}`}>
           {status === 'saving' ? (
             <>
@@ -182,12 +313,31 @@ export default function Sales() {
             ''
           )}
         </span>
+        <Link to="/don" className="btn btn-ghost">
+          <ClipboardList size={18} /> Xem mọi đơn
+        </Link>
+        {!needsUpgrade && (
+          <button type="button" className={`btn ${draft ? 'btn-drafting' : 'btn-primary'}`} onClick={toggleDraft} aria-pressed={!!draft}>
+            <ClipboardPlus size={18} /> {draft ? 'Đang lập đơn' : 'Lập đơn'}
+          </button>
+        )}
       </PageHeader>
+
+      {needsUpgrade && (
+        <div className="callout">
+          Để dùng <b>Lập đơn nhanh</b> và bán Ly / Chai, cần nâng cấp database 1 lần: Supabase → SQL Editor → dán file{' '}
+          <code>supabase/nang-cap-v3.sql</code> → RUN, rồi tải lại trang.
+        </div>
+      )}
 
       <DateNav date={date} onChange={setDate} />
 
       <div className="stats stats-3">
-        <StatTile label="Đã bán" value={`${totalQty} phần`} note={wasteQty ? `Hủy ${wasteQty} phần` : undefined} />
+        <StatTile
+          label="Đã bán"
+          value={`${totalQty} phần`}
+          note={[chaiQty > 0 && `${totalQty - chaiQty} ly · ${chaiQty} chai`, wasteQty > 0 && `hủy ${wasteQty}`].filter(Boolean).join(' · ') || undefined}
+        />
         <StatTile label="Doanh thu" value={money(revenue)} />
         <StatTile
           label="Lãi gộp"
@@ -197,6 +347,28 @@ export default function Sales() {
         />
       </div>
 
+      {pending?.length > 0 && (
+        <section className="pending">
+          <div className="section-head">
+            <h2>Đơn đang chờ ({pending.length})</h2>
+            <span className="muted small">{money(pending.reduce((s, o) => s + Number(o.total), 0))}</span>
+          </div>
+          <div className="pending-strip">
+            {pending.map((o) => (
+              <OrderCard
+                key={o.id}
+                order={o}
+                busy={busyOrder === o.id}
+                editing={draft?.editingId === o.id}
+                onDone={() => markDone(o)}
+                onEdit={() => editOrder(o)}
+                onDelete={() => deleteOrder(o)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {products.length === 0 ? (
         <Empty icon={CupSoda}>
           Chưa có sản phẩm nào. <Link to="/san-pham">Thêm sản phẩm</Link> trước nhé.
@@ -205,38 +377,35 @@ export default function Sales() {
         <div className="product-grid">
           {products.map((p) => {
             const r = rows[p.id]
-            const q = r?.quantity || 0
+            const s = sold[p.id]?.ly + sold[p.id]?.chai > 0 ? sold[p.id] : null
+            const d = inDraft[p.id]
             const tags = [
               r?.gift_qty > 0 && `Tặng ${r.gift_qty}`,
               r?.discount > 0 && `Giảm ${moneyShort(r.discount)}`,
               waste[p.id] && `Hủy ${waste[p.id].quantity}`,
             ].filter(Boolean)
             return (
-              <div key={p.id} className={`sell-card ${q > 0 ? 'has-qty' : ''}`}>
+              <div key={p.id} className={`sell-card ${d ? 'in-draft' : s ? 'has-qty' : ''}`}>
                 <div className="sell-top">
-                  <button type="button" className="sell-main" onClick={() => change(p, { quantity: q + 1 })}>
+                  <button
+                    type="button"
+                    className="sell-main"
+                    onClick={() => (needsUpgrade ? change(p, { quantity: (r?.quantity || 0) + 1 }) : setPicker(p))}
+                  >
                     <span className="sell-name">{p.name}</span>
-                    <span className="muted">{money(r?.unit_price ?? p.price)}</span>
+                    <span className="muted">{money(p.price)}</span>
                     {tags.length > 0 && <span className="sell-tags">{tags.join(' · ')}</span>}
                   </button>
                   <button type="button" className="icon-btn sell-more" onClick={() => setExtra(p)} aria-label={`Tặng, giảm giá, hủy ${p.name}`}>
                     <Ellipsis size={18} />
                   </button>
                 </div>
-                <div className="stepper">
-                  <button type="button" onClick={() => change(p, { quantity: q - 1 })} disabled={q === 0} aria-label={`Bớt ${p.name}`}>
-                    <Minus size={18} />
-                  </button>
-                  <input
-                    inputMode="numeric"
-                    value={q}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => change(p, { quantity: Number(e.target.value.replace(/\D/g, '')) })}
-                    aria-label={`Số lượng ${p.name}`}
-                  />
-                  <button type="button" onClick={() => change(p, { quantity: q + 1 })} aria-label={`Thêm ${p.name}`}>
-                    <Plus size={18} />
-                  </button>
+                <div className="sell-foot">
+                  {d ? (
+                    <span className="sell-draft">Trong đơn: {packText(d.ly, d.chai)}</span>
+                  ) : (
+                    <span className="muted small">{s ? `Đã bán ${packText(s.ly, s.chai)}` : 'Chưa bán'}</span>
+                  )}
                 </div>
               </div>
             )
@@ -281,15 +450,55 @@ export default function Sales() {
 
       <DayClosing date={date} revenue={revenue} deposits={deposits} />
 
+      {draft && !needsUpgrade && (
+        <>
+          <div className="draft-spacer" />
+          <DraftPanel draft={draft} onChange={setDraft} onSubmit={submitDraft} onCancel={toggleDraft} busy={draftBusy} />
+        </>
+      )}
+
+      {picker && (
+        <PackPicker
+          product={picker}
+          lyCost={lyCost(picker)}
+          def={chaiDef}
+          onAdd={addToDraft}
+          onEditPrice={() => {
+            setPriceEdit(picker)
+            setPicker(null)
+          }}
+          onClose={() => setPicker(null)}
+        />
+      )}
+
+      {priceEdit && (
+        <PriceForm
+          product={priceEdit}
+          lyCost={lyCost(priceEdit)}
+          def={chaiDef}
+          onClose={() => {
+            setPicker(priceEdit)
+            setPriceEdit(null)
+          }}
+          onSaved={(product, def) => {
+            setProducts((list) => list.map((p) => (p.id === product.id ? product : p)))
+            setChaiDef(def)
+            setPriceEdit(null)
+            setPicker(product)
+          }}
+        />
+      )}
+
       {extra && (
         <ExtraForm
           product={extra}
           row={rows[extra.id]}
           waste={waste[extra.id]}
           onClose={() => setExtra(null)}
-          onSave={async (gift_qty, discount, wasteQty, reason) => {
+          onSave={async (quantity, gift_qty, discount, wasteQty, reason) => {
             const r = rows[extra.id]
-            if (gift_qty !== (r?.gift_qty || 0) || discount !== Number(r?.discount || 0)) change(extra, { gift_qty, discount })
+            if (quantity !== (r?.quantity || 0) || gift_qty !== (r?.gift_qty || 0) || discount !== Number(r?.discount || 0))
+              change(extra, { quantity, gift_qty, discount })
             if (wasteQty !== (waste[extra.id]?.quantity || 0) || (reason || null) !== (waste[extra.id]?.reason || null))
               await saveWaste(extra, wasteQty, reason)
             setExtra(null)
@@ -301,16 +510,20 @@ export default function Sales() {
 }
 
 function ExtraForm({ product, row, waste, onClose, onSave }) {
+  const [qty, setQty] = useState(row?.quantity || '')
   const [gift, setGift] = useState(row?.gift_qty || '')
   const [discount, setDiscount] = useState(row?.discount || '')
   const [wasteQty, setWasteQty] = useState(waste?.quantity || '')
   const [reason, setReason] = useState(waste?.reason || '')
   const int = (v) => Math.max(0, Math.floor(Number(v) || 0))
-  const [busy, onSubmit] = useSubmit(() => onSave(int(gift), Number(discount || 0), int(wasteQty), reason.trim()))
+  const [busy, onSubmit] = useSubmit(() => onSave(int(qty), int(gift), Number(discount || 0), int(wasteQty), reason.trim()))
 
   return (
     <Modal title={product.name} onClose={onClose}>
       <form className="form" onSubmit={onSubmit}>
+        <Field label="Bán lẻ không qua đơn (phần)" hint="Số đếm kiểu cũ, giá Ly. Bán bằng “Lập đơn” thì không cần gõ ở đây.">
+          <input type="number" min="0" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} />
+        </Field>
         <div className="form-row">
           <Field label="Tặng khách (phần)" hint="Tính giá vốn, không tính doanh thu">
             <input type="number" min="0" inputMode="numeric" value={gift} onChange={(e) => setGift(e.target.value)} />

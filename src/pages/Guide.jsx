@@ -66,9 +66,17 @@ export default function Guide() {
         </Section>
 
         <Section icon={ShoppingBag} title="Buổi sáng — bán hàng" when="Mỗi ngày">
-          <Step n="1" title="Bấm vào món khi bán" to="/ban-hang">
-            Bán 1 phần thì bấm vào tên món (+1). Bấm <b>−</b> nếu lỡ bấm dư. Có thể gõ thẳng số lượng. App tự lưu, góc trên hiện{' '}
-            <span className="good-text">✓ Đã lưu</span>.
+          <Step n="1" title="Lập đơn thay cho viết giấy" to="/ban-hang">
+            Khách gọi món → bấm vào tên món → chọn số <b>Ly</b> / <b>Chai</b> → <Btn primary>OK</Btn>. Nút <Btn>Lập đơn</Btn> chuyển{' '}
+            <span className="good-text">xanh lá</span> = đang lập đơn. Gọi đủ món thì bấm <Btn>Chốt đơn</Btn> → hiện thẻ{' '}
+            <b>màu vàng</b> ở “Đơn đang chờ”. Làm được nhiều đơn cùng lúc.
+            <br />
+            Khách lấy hàng xong bấm <Btn>Đã xong</Btn> trên thẻ vàng → tiền tự vào doanh thu. Khách lấy liền thì bấm{' '}
+            <Btn>Xong luôn</Btn> thay cho Chốt đơn.
+          </Step>
+          <Step title="Chỉnh giá Ly / Chai">
+            Trong popup chọn Ly / Chai bấm <Btn>Chỉnh giá</Btn>: giá Ly, Chai đắt hơn bao nhiêu (mặc định +3.000đ) và vốn thêm của
+            vỏ chai (mặc định 2.500đ). Xem mọi đơn và số Ly / Chai đã bán ở trang <Link to="/don">Đơn bán</Link>.
           </Step>
           <Step n="2" title="Tặng, giảm giá, đổ bỏ">
             Bấm nút <Btn icon={Ellipsis} /> trên món đó để ghi số phần tặng khách, tiền giảm giá, hoặc số phần phải đổ bỏ.

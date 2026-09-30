@@ -648,3 +648,99 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
   white-space: nowrap;
 }
 @media (min-width: 900px) { .update-banner { bottom: 20px; } }
+
+/* ---------- Lập đơn nhanh: xanh lá = đang lập, vàng = chờ giao ---------- */
+:root {
+  --yellow: #f2b705;
+  --yellow-soft: #fff6d1;
+  --yellow-ink: #6b4f00;
+}
+.btn-drafting { background: var(--good); color: #fff; box-shadow: 0 0 0 3px var(--good-soft); }
+.btn-drafting:hover { background: #276a43; }
+
+.sell-foot { padding: 8px 12px 10px; border-top: 1px solid var(--line); min-height: 38px; display: flex; align-items: center; }
+.sell-card.in-draft { border-color: var(--good); background: var(--good-soft); }
+.sell-card.in-draft .sell-foot { border-top-color: transparent; }
+.sell-draft { font-size: 0.85rem; font-weight: 600; color: var(--good); }
+
+/* Popup Ly / Chai */
+.pack-row { display: grid; grid-template-columns: 1fr 150px; gap: 10px; align-items: stretch; }
+.pack-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding: 10px 14px;
+  min-height: 64px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+  user-select: none;
+}
+.pack-btn strong { font-size: 1.15rem; }
+.pack-row.on .pack-btn { border-color: var(--primary); background: var(--primary-soft); }
+.stepper-inline { border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; align-self: center; }
+.stepper-inline button { height: 48px; }
+.btn-edit-price { margin-right: auto; }
+.more-settings summary { cursor: pointer; color: var(--ink-2); font-size: 0.9rem; font-weight: 600; padding: 4px 0; }
+.more-settings[open] summary { margin-bottom: 10px; }
+
+/* Thẻ đơn */
+.pending { margin-bottom: 16px; }
+.pending .section-head { margin-bottom: 8px; }
+.pending-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.pending-strip .qorder { flex: 0 0 240px; scroll-snap-align: start; }
+.qorder-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.qorder {
+  background: var(--yellow-soft);
+  border: 1.5px solid var(--yellow);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qorder.done { background: var(--surface); border-color: var(--line); }
+.qorder.editing { border-color: var(--good); border-style: dashed; }
+.qorder-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; color: var(--yellow-ink); }
+.qorder.done .qorder-head { color: var(--ink); }
+.qorder-lines { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.qorder-lines .kv > span:first-child { color: var(--ink); }
+.qorder-lines .kv > span:last-child { font-weight: 600; white-space: nowrap; }
+.qorder-total { display: flex; align-items: baseline; gap: 10px; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.qorder-actions { display: flex; gap: 4px; align-items: center; }
+.btn-done { flex: 1; min-height: 46px; }
+.qorder:not(.done) .btn-done { background: var(--good); }
+.qorder:not(.done) .btn-done:hover:not(:disabled) { background: #276a43; }
+
+/* Thanh đơn đang lập */
+.draft-spacer { height: 96px; }
+.draft-panel {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom));
+  z-index: 30;
+  background: var(--surface);
+  border: 2px solid var(--good);
+  border-radius: 16px;
+  box-shadow: 0 6px 24px rgba(30, 60, 40, 0.22);
+  overflow: hidden;
+}
+@media (min-width: 900px) {
+  .draft-panel { left: 272px; right: 32px; bottom: 20px; max-width: 900px; margin: 0 auto; }
+}
+.draft-body { max-height: 45vh; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); }
+.draft-line { display: flex; align-items: center; gap: 10px; }
+.draft-line .stepper-inline { width: 130px; flex-shrink: 0; }
+.draft-line .stepper-inline button { height: 40px; }
+.draft-note { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; min-height: 44px; }
+.draft-bar { display: flex; align-items: center; gap: 6px; padding: 8px; background: var(--good-soft); }
+.draft-sum { flex: 1; min-width: 0; border: 0; background: none; text-align: left; display: flex; flex-direction: column; padding: 2px 6px; color: var(--good); }
+.draft-sum strong { font-size: 1.15rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.draft-cancel { color: var(--muted); }
+.btn-chot { background: var(--yellow); color: #3a2a00; min-height: 48px; padding: 0 18px; font-size: 1rem; }
+.btn-chot:hover:not(:disabled) { background: #e0a800; }
+@media (max-width: 380px) { .draft-now { display: none; } }

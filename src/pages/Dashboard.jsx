@@ -455,7 +455,7 @@ function exportExcel(range, data) {
         ...sales.map((r) => [
           dmy(r.date),
           r.product_name,
-          r.source ? `Đơn đặt #${r.source.split(':')[1]}` : 'Tại quán',
+          r.source.startsWith('quick:') ? `Đơn quầy #${r.source.split(':')[1]}` : r.source ? `Đơn đặt #${r.source.split(':')[1]}` : 'Tại quán',
           r.quantity,
           r.gift_qty || 0,
           r0(r.unit_price),
