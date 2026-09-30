@@ -84,6 +84,15 @@ export default function Guide() {
           <Step n="3" title="Giao đơn đặt trước" to="/lich">
             Vào <b>Lịch đơn</b>, giao xong bấm <Btn>Đã giao</Btn> → tự tính vào doanh thu, <b>không cần</b> bấm lại ở trang Bán hàng.
           </Step>
+          <Step title="Báo thức cho đơn / ghi chú" to="/lich">
+            Trong form đơn đặt hoặc ghi chú, mục <b>Báo thức</b>: chọn <b>Trước giờ giao</b> (15 phút, 1 tiếng…) hoặc <b>Chọn giờ</b>. Đến giờ
+            app kêu bíp và hiện thông báo. Bấm chuông trên thẻ đơn để tắt / bật nhanh, nút <Btn>Báo thức</Btn> để xem hết. App cần đang mở
+            (chạy nền cũng được) mới báo.
+          </Step>
+          <Step title="Chi phí hằng ngày (nước đá…)" to="/chi-phi">
+            Vào <b>Chi phí khác</b> → <Btn>Định kỳ</Btn>: tạo 1 lần, chọn mỗi ngày hoặc các thứ trong tuần. App tự ghi mỗi ngày; hôm nào
+            không mua thì bấm <b>Bỏ qua</b> trên khoản đó. Gạt công tắc để tạm dừng.
+          </Step>
         </Section>
 
         <Section icon={Wallet} title="Buổi tối — chốt sổ" when="Mỗi ngày, làm theo thứ tự">

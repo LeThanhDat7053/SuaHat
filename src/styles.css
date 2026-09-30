@@ -744,3 +744,62 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .btn-chot { background: var(--yellow); color: #3a2a00; min-height: 48px; padding: 0 18px; font-size: 1rem; }
 .btn-chot:hover:not(:disabled) { background: #e0a800; }
 @media (max-width: 380px) { .draft-now { display: none; } }
+
+/* ---------- Báo thức + chi phí định kỳ ---------- */
+.link-btn { border: 0; background: none; color: var(--primary); font-weight: 600; font-size: 0.85rem; padding: 0; }
+.switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: background 0.15s; pointer-events: none; }
+.switch span::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+.switch input:checked + span { background: var(--good); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.switch input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.recurring-card { margin-bottom: 16px; }
+.recurring-empty { padding: 12px 16px; }
+.recurring-main, .expense-main { border: 0; background: none; padding: 0; text-align: left; color: inherit; }
+.list-row.is-paused .recurring-main, .list-row.is-paused > strong { opacity: 0.5; }
+.expense-row { padding-top: 10px; padding-bottom: 10px; }
+.expense-auto { margin-left: 6px; vertical-align: 1px; }
+.day-chips { margin-bottom: 0; flex-wrap: wrap; }
+.day-chips .chip { min-width: 44px; }
+
+.remind-tabs { margin-bottom: 0; }
+.remind-chips { margin-bottom: 0; flex-wrap: wrap; align-items: center; }
+.remind-custom { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--ink-2); }
+.remind-custom input { width: 72px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; min-height: 34px; }
+.order-badges { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.alarm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.alarm-chip.off { border-color: var(--line); background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+.note-card .alarm-chip { margin-top: 6px; }
+
+.alarm-list { display: flex; flex-direction: column; gap: 12px; }
+.alarm-item { background: var(--warn-soft); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.alarm-item > strong { font-size: 1.05rem; }
+.alarm-body { white-space: pre-line; color: var(--ink-2); }
+.alarm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.alarm-actions .btn-primary { flex: 1; min-height: 48px; }

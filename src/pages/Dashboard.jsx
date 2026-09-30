@@ -6,6 +6,7 @@ import { loadStock } from '../lib/stock'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { orderItemsText } from '../lib/orders'
 import { downloadXlsx } from '../lib/xlsx'
+import { applyRecurring } from '../lib/recurring'
 import { addDays, daysBetween, fmtDate, fmtQty, fmtTime, money, moneyShort, monthRange, num, periodRange, todayStr } from '../lib/format'
 import { Loading, PageHeader, StatTile } from '../components/ui'
 import { STATUS } from './CalendarPage'
@@ -79,7 +80,11 @@ export default function Dashboard() {
     let cancelled = false
     setData(null)
     const prev = prevRange(range)
-    Promise.all([loadRange(range, true), loadRange(prev, false)]).then(
+    // ghi các chi phí định kỳ còn thiếu trước, để số liệu có luôn khoản hôm nay
+    applyRecurring()
+      .catch((e) => console.error(e))
+      .then(() => Promise.all([loadRange(range, true), loadRange(prev, false)]))
+      .then(
       ([cur, before]) => !cancelled && setData({ ...cur, prev: { ...before, range: prev } }),
       (e) => showError(e),
     )

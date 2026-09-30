@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut, Wheat, CircleQuestionMark, ClipboardList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { ReminderWatcher } from './Reminders'
 
 export const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard, mobile: true },
@@ -41,6 +42,7 @@ export default function Layout({ children }) {
       </aside>
 
       <main className="content">{children}</main>
+      <ReminderWatcher />
 
       <nav className="bottom-nav">
         {NAV.filter((n) => n.mobile).map(({ to, label, icon: Icon }) => (

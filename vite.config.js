@@ -29,6 +29,7 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         cleanupOutdatedCaches: true,
+        importScripts: ['sw-notify.js'], // bấm thông báo báo thức → mở Lịch đơn
       },
     }),
   ],

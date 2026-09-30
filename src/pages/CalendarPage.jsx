@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Trash2 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { AlarmClock, BellOff, ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Trash2 } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
 import { linesTotal, orderItemsText, orderSource, syncOrderSales } from '../lib/orders'
+import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
+import { ReminderField, ReminderList } from '../components/Reminders'
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 export const STATUS = {
@@ -32,6 +35,16 @@ export default function CalendarPage() {
   const [notes, setNotes] = useState([])
   const [editOrder, setEditOrder] = useState(null)
   const [editNote, setEditNote] = useState(null)
+  const [showAlarms, setShowAlarms] = useState(false)
+  const [params, setParams] = useSearchParams()
+
+  // mở từ báo thức: /lich?ngay=2026-10-02
+  useEffect(() => {
+    const d = params.get('ngay')
+    if (!d) return
+    pick(d)
+    setParams({}, { replace: true })
+  }, [params])
 
   const days = gridDays(month)
   const from = days[0]
@@ -61,6 +74,21 @@ export default function CalendarPage() {
     showError(await syncOrderSales({ ...order, status }))
     load()
   }
+  async function toggleAlarm(table, rec) {
+    const error = await setReminderOff({ table, id: rec.id }, !rec.remind_off)
+    if (!showError(error)) load()
+  }
+
+  // mở đơn / ghi chú từ danh sách báo thức
+  async function openFromAlarm(item) {
+    setShowAlarms(false)
+    const { data, error } = await supabase.from(item.table).select('*').eq('id', item.id).single()
+    if (showError(error)) return
+    pick(item.date)
+    if (item.table === 'orders') setEditOrder(data)
+    else setEditNote(data)
+  }
+
   async function removeNote(note) {
     if (!confirm('Xóa ghi chú này?')) return
     const { error } = await supabase.from('notes').delete().eq('id', note.id)
@@ -75,6 +103,9 @@ export default function CalendarPage() {
   return (
     <>
       <PageHeader title="Lịch đơn" subtitle="Đơn đặt trước và ghi chú theo ngày">
+        <button className="btn btn-ghost" onClick={() => setShowAlarms(true)}>
+          <AlarmClock size={18} /> Báo thức
+        </button>
         <button className="btn btn-ghost" onClick={() => setEditNote({ date: selected })}>
           <StickyNote size={18} /> Ghi chú
         </button>
@@ -155,7 +186,10 @@ export default function CalendarPage() {
                   <strong>{o.customer}</strong>
                   {o.order_time && <span className="muted"> · {fmtTime(o.order_time)}</span>}
                 </div>
-                <span className={`badge badge-${STATUS[o.status].cls}`}>{STATUS[o.status].label}</span>
+                <span className="order-badges">
+                  {o.status === 'pending' && <AlarmChip rec={o} onToggle={() => toggleAlarm('orders', o)} />}
+                  <span className={`badge badge-${STATUS[o.status].cls}`}>{STATUS[o.status].label}</span>
+                </span>
               </div>
               {orderItemsText(o) && <p className="order-items">{orderItemsText(o, '\n')}</p>}
               {o.lines?.length > 0 && o.items && <p className="muted small">{o.items}</p>}
@@ -191,7 +225,10 @@ export default function CalendarPage() {
           {dayNotes.map((n) => (
             <div key={n.id} className="card note-card">
               <StickyNote size={18} className="note-icon" />
-              <p className="grow">{n.content}</p>
+              <div className="grow">
+                <p>{n.content}</p>
+                <AlarmChip rec={n} onToggle={() => toggleAlarm('notes', n)} />
+              </div>
               <button className="icon-btn" onClick={() => setEditNote(n)} aria-label="Sửa ghi chú">
                 <Pencil size={16} />
               </button>
@@ -203,6 +240,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {showAlarms && <ReminderList onOpen={openFromAlarm} onClose={() => setShowAlarms(false)} />}
       {editOrder && (
         <OrderForm
           order={editOrder}
@@ -229,6 +267,19 @@ export default function CalendarPage() {
   )
 }
 
+// Chuông trên thẻ đơn / ghi chú: bấm để tắt / bật nhanh
+function AlarmChip({ rec, onToggle }) {
+  if (!rec.remind_at || rec.reminded_at) return null
+  const at = new Date(rec.remind_at)
+  const sameDay = toLocalInput(at).slice(0, 10) === (rec.order_date || rec.date)
+  const label = at.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + (sameDay ? '' : ` ${at.getDate()}/${at.getMonth() + 1}`)
+  return (
+    <button type="button" className={`alarm-chip ${rec.remind_off ? 'off' : ''}`} onClick={onToggle} title={rec.remind_off ? 'Bật báo thức' : 'Tắt báo thức'}>
+      {rec.remind_off ? <BellOff size={13} /> : <AlarmClock size={13} />} {label}
+    </button>
+  )
+}
+
 export function OrderForm({ order, onClose, onSaved }) {
   const [products, setProducts] = useState([])
   const [form, setForm] = useState({
@@ -244,6 +295,7 @@ export function OrderForm({ order, onClose, onSaved }) {
     status: order.status || 'pending',
     note: order.note || '',
   })
+  const [remind, setRemind] = useState(() => reminderForm(order, `${order.order_date || todayStr()}T08:00`))
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
@@ -268,8 +320,16 @@ export function OrderForm({ order, onClose, onSaved }) {
 
   async function submit(e) {
     e.preventDefault()
+    // chỉ gửi cột báo thức khi đã có (đã chạy nang-cap-v4.sql) hoặc có cài
+    let alarm = {}
+    if ('remind_at' in order || remind.mode !== 'off') {
+      const r = reminderPayload(form.status === 'pending' ? remind : { mode: 'off' }, order, orderDue(form.order_date, form.order_time))
+      if (r.error) return alert(r.error)
+      alarm = r.payload
+    }
     setBusy(true)
     const payload = {
+      ...alarm,
       order_date: form.order_date,
       order_time: form.order_time || null,
       customer: form.customer.trim(),
@@ -288,6 +348,7 @@ export function OrderForm({ order, onClose, onSaved }) {
     if (showError(error)) return setBusy(false)
     // đơn đã giao → ghi / cập nhật doanh thu
     showError(await syncOrderSales(data))
+    remindersChanged()
     setBusy(false)
     onSaved(payload.order_date)
   }
@@ -394,6 +455,7 @@ export function OrderForm({ order, onClose, onSaved }) {
         <Field label="Ghi chú">
           <textarea rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Địa chỉ giao…" />
         </Field>
+        {form.status === 'pending' && <ReminderField value={remind} onChange={setRemind} allowBefore hasTime={!!form.order_time} />}
         <div className="form-actions">
           {order.id && (
             <button type="button" className="btn btn-danger-ghost" onClick={remove}>
@@ -416,14 +478,23 @@ export function OrderForm({ order, onClose, onSaved }) {
 function NoteForm({ note, onClose, onSaved }) {
   const [date, setDate] = useState(note.date || todayStr())
   const [content, setContent] = useState(note.content || '')
+  const [remind, setRemind] = useState(() => reminderForm(note, `${note.date || todayStr()}T08:00`))
   const [busy, onSubmit] = useSubmit(submit)
 
   async function submit() {
-    const payload = { date, content: content.trim() }
+    let alarm = {}
+    if ('remind_at' in note || remind.mode !== 'off') {
+      const r = reminderPayload(remind, note, null)
+      if (r.error) return alert(r.error)
+      alarm = r.payload
+    }
+    const payload = { date, content: content.trim(), ...alarm }
     const { error } = note.id
       ? await supabase.from('notes').update(payload).eq('id', note.id)
       : await supabase.from('notes').insert(payload)
-    if (!showError(error)) onSaved(date)
+    if (showError(error)) return
+    remindersChanged()
+    onSaved(date)
   }
 
   return (
@@ -435,6 +506,7 @@ function NoteForm({ note, onClose, onSaved }) {
         <Field label="Nội dung">
           <textarea rows={4} value={content} onChange={(e) => setContent(e.target.value)} required autoFocus />
         </Field>
+        <ReminderField value={remind} onChange={setRemind} allowBefore={false} />
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Hủy
