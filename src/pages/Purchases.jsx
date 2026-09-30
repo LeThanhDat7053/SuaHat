@@ -8,6 +8,7 @@ import { avgPrice } from '../lib/cost'
 import { BIG_UNIT, fmtDate, fmtQty, money, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton } from '../components/ui'
 import { UNITS } from './Ingredients'
+import { groupByCategory } from '../lib/categories'
 
 export default function Purchases() {
   const [period, setPeriod] = useState({ mode: 'day', date: todayStr() })
@@ -221,10 +222,14 @@ function PurchaseForm({ onClose, onSaved }) {
                 </div>
                 <Field label="Nguyên liệu">
                   <select value={line.ingredient_id} onChange={(e) => setLine(i, 'ingredient_id', e.target.value)}>
-                    {ingredients.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
+                    {groupByCategory(ingredients).map(([cat, list]) => (
+                      <optgroup key={cat} label={cat}>
+                        {list.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                     <option value="new">+ Nguyên liệu mới…</option>
                   </select>

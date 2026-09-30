@@ -66,6 +66,10 @@ export default function Guide() {
         </Section>
 
         <Section icon={ShoppingBag} title="Buổi sáng — bán hàng" when="Mỗi ngày">
+          <Step title="Chọn món hôm nay" to="/ban-hang">
+            Đầu trang <b>Bán hàng</b> bấm <Btn>Chọn món</Btn>, tích các món đang bán → các món này được <b>tô màu và xếp lên đầu</b>, món khác
+            gọn vào mục “Món khác”. Giữ nguyên cho các ngày sau tới khi đổi.
+          </Step>
           <Step n="1" title="Lập đơn thay cho viết giấy" to="/ban-hang">
             Khách gọi món → bấm vào tên món → chọn số <b>Ly</b> / <b>Chai</b> → <Btn primary>OK</Btn>. Nút <Btn>Lập đơn</Btn> chuyển{' '}
             <span className="good-text">xanh lá</span> = đang lập đơn. Gọi đủ món thì bấm <Btn>Chốt đơn</Btn> → hiện thẻ{' '}
@@ -95,17 +99,11 @@ export default function Guide() {
           </Step>
         </Section>
 
-        <Section icon={Wallet} title="Buổi tối — chốt sổ" when="Mỗi ngày, làm theo thứ tự">
-          <Step n="1" title="Chốt tiền (không bắt buộc)" to="/ban-hang">
-            Cuối trang <b>Bán hàng</b>: đếm tiền thật trong két và xem app ngân hàng, gõ vào → app so với doanh thu trên sổ và báo{' '}
-            <b>khớp</b> hay <b>thiếu / dư</b>.
-            <br />
-            Đây chỉ là bước <b>kiểm tra lại</b>, số tiền gõ vào <b>không cộng</b> vào doanh thu.
-          </Step>
-          <Step n="2" title="Kiểm kê (vài ngày 1 lần)" to="/nguyen-lieu">
+        <Section icon={Wallet} title="Buổi tối — kiểm kê và nhập hàng" when="Làm theo thứ tự">
+          <Step n="1" title="Kiểm kê (vài ngày 1 lần)" to="/nguyen-lieu">
             Cân / đếm hàng <b>còn lại</b> → <Btn icon={ClipboardCheck}>Kiểm kê</Btn>. Không cần kiểm hết, chỉ cần các loại hạt đắt tiền.
           </Step>
-          <Step n="3" title="Nhập hàng vừa mua" to="/nhap-hang">
+          <Step n="2" title="Nhập hàng vừa mua" to="/nhap-hang">
             <Btn icon={Plus} primary>Nhập hàng</Btn> → chọn nguyên liệu, gõ số <b>kg / lít</b> và <b>tổng tiền đã trả</b>. Mua nhiều món thì
             bấm “Thêm món khác”.
           </Step>

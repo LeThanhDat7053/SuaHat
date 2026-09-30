@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CupSoda, Ellipsis, Wallet, Trash2, ClipboardList, ClipboardPlus } from 'lucide-react'
-import { showError, supabase } from '../lib/supabase'
+import { CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
+import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { cached, peek } from '../lib/cache'
@@ -30,12 +30,11 @@ const costOf = (c) => ({ ing: toMap(c.ingredients), rec: toMap(c.recipes) })
 
 // Dữ liệu bán hàng của 1 ngày
 async function fetchDay(date) {
-  const [s, w, o] = await Promise.all([
+  const [s, w] = await Promise.all([
     supabase.from('sales').select('*').eq('date', date),
     supabase.from('waste').select('*').eq('date', date),
-    supabase.from('orders').select('deposit').eq('order_date', date).eq('status', 'done'),
   ])
-  const error = s.error || w.error || o.error
+  const error = s.error || w.error
   if (error) throw error
   const rows = {}
   s.data.forEach((r) => r.product_id && r.source === '' && (rows[r.product_id] = r))
@@ -43,10 +42,22 @@ async function fetchDay(date) {
     rows,
     dayRows: s.data,
     waste: Object.fromEntries(w.data.map((r) => [r.product_id, r])),
-    deposits: o.data.reduce((sum, r) => sum + Number(r.deposit), 0),
   }
 }
 const dayKey = (date) => `sales-day:${date}`
+
+// Món đang bán mấy hôm nay: chọn 1 lần, giữ tới khi đổi, mọi máy dùng chung
+const FEATURED_KEY = 'featured_products'
+const loadFeatured = () => cached(FEATURED_KEY, () => getSetting(FEATURED_KEY, []), 0)
+
+const OTHERS_KEY = 'sales-show-others'
+function readShowOthers() {
+  try {
+    return localStorage.getItem(OTHERS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 export default function Sales() {
   // có dữ liệu từ lần mở trước thì hiện ngay, tải mới ngầm phía sau
@@ -58,11 +69,13 @@ export default function Sales() {
   const [rows, setRows] = useState(day0?.rows || {}) // product_id → dòng bán tại quán của ngày đang xem
   const [dayRows, setDayRows] = useState(day0?.dayRows || []) // mọi dòng bán trong ngày (cả đơn đặt, món đã ẩn)
   const [waste, setWaste] = useState(day0?.waste || {}) // product_id → dòng hủy
-  const [deposits, setDeposits] = useState(day0?.deposits || 0)
   const [extra, setExtra] = useState(null) // món đang mở "Tặng / giảm / hủy"
   const [status, setStatus] = useState('')
 
   const [chaiDef, setChaiDef] = useState(CHAI_DEFAULTS)
+  const [featured, setFeatured] = useState(() => peek(FEATURED_KEY) || [])
+  const [pickFeatured, setPickFeatured] = useState(false)
+  const [showOthers, setShowOthers] = useState(readShowOthers)
   const [draft, setDraft] = useState(loadDraft) // null = không ở chế độ lập đơn
   const [pending, setPending] = useState(null) // đơn đã chốt, đang chờ giao
   const [needsUpgrade, setNeedsUpgrade] = useState(false)
@@ -80,6 +93,7 @@ export default function Sales() {
       setCostCtx(costOf(c))
     }, showError)
     getChaiDefaults().then(setChaiDef)
+    loadFeatured().then((v) => setFeatured(Array.isArray(v) ? v : []), showError)
   }
   useEffect(loadCat, [])
   useLive(['products', 'ingredients', 'recipes', 'settings'], loadCat)
@@ -148,7 +162,6 @@ export default function Sales() {
     setRows(d.rows)
     setDayRows(d.dayRows)
     setWaste(d.waste)
-    setDeposits(d.deposits)
   }
 
   async function loadDay(date, cancelled = () => false) {
@@ -163,7 +176,7 @@ export default function Sales() {
   useEffect(() => {
     flush()
     let cancelled = false
-    applyDay(peek(dayKey(date)) || { rows: {}, dayRows: [], waste: {}, deposits: 0 })
+    applyDay(peek(dayKey(date)) || { rows: {}, dayRows: [], waste: {} })
     loadDay(date, () => cancelled)
     return () => {
       cancelled = true
@@ -301,6 +314,23 @@ export default function Sales() {
     if (!showError(error)) setPending((p) => p.filter((o) => o.id !== order.id))
   }
 
+  function toggleOthers() {
+    const next = !showOthers
+    setShowOthers(next)
+    try {
+      localStorage.setItem(OTHERS_KEY, next ? '1' : '0')
+    } catch {
+      /* bỏ qua */
+    }
+  }
+
+  async function saveFeatured(ids) {
+    const prev = featured
+    setFeatured(ids)
+    setPickFeatured(false)
+    if (!(await setSetting(FEATURED_KEY, ids))) setFeatured(prev)
+  }
+
   if (!products) return <Loading />
 
   const activeIds = new Set(products.map((p) => p.id))
@@ -329,6 +359,46 @@ export default function Sales() {
     const s = (inDraft[l.product_id] ||= { ly: 0, chai: 0 })
     s[l.pack] += l.qty
   })
+
+  const renderCard = (p, isFeatured) => {
+    const r = rows[p.id]
+    const s = sold[p.id]?.ly + sold[p.id]?.chai > 0 ? sold[p.id] : null
+    const d = inDraft[p.id]
+    const tags = [
+      r?.gift_qty > 0 && `Tặng ${r.gift_qty}`,
+      r?.discount > 0 && `Giảm ${moneyShort(r.discount)}`,
+      waste[p.id] && `Hủy ${waste[p.id].quantity}`,
+    ].filter(Boolean)
+    return (
+      <div key={p.id} className={`sell-card ${isFeatured ? 'featured' : ''} ${d ? 'in-draft' : s ? 'has-qty' : ''}`}>
+        <div className="sell-top">
+          <button
+            type="button"
+            className="sell-main"
+            onClick={() => (needsUpgrade ? change(p, { quantity: (r?.quantity || 0) + 1 }) : setPicker(p))}
+          >
+            <span className="sell-name">{p.name}</span>
+            <span className="muted">{money(p.price)}</span>
+            {tags.length > 0 && <span className="sell-tags">{tags.join(' · ')}</span>}
+          </button>
+          <button type="button" className="icon-btn sell-more" onClick={() => setExtra(p)} aria-label={`Tặng, giảm giá, hủy ${p.name}`}>
+            <Ellipsis size={18} />
+          </button>
+        </div>
+        <div className="sell-foot">
+          {d ? (
+            <span className="sell-draft">Trong đơn: {packText(d.ly, d.chai)}</span>
+          ) : (
+            <span className="muted small">{s ? `Đã bán ${packText(s.ly, s.chai)}` : 'Chưa bán'}</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const featuredSet = new Set(featured)
+  const featuredList = products.filter((p) => featuredSet.has(p.id))
+  const otherList = products.filter((p) => !featuredSet.has(p.id))
 
   return (
     <>
@@ -407,43 +477,36 @@ export default function Sales() {
           Chưa có sản phẩm nào. <Link to="/san-pham">Thêm sản phẩm</Link> trước nhé.
         </Empty>
       ) : (
-        <div className="product-grid">
-          {products.map((p) => {
-            const r = rows[p.id]
-            const s = sold[p.id]?.ly + sold[p.id]?.chai > 0 ? sold[p.id] : null
-            const d = inDraft[p.id]
-            const tags = [
-              r?.gift_qty > 0 && `Tặng ${r.gift_qty}`,
-              r?.discount > 0 && `Giảm ${moneyShort(r.discount)}`,
-              waste[p.id] && `Hủy ${waste[p.id].quantity}`,
-            ].filter(Boolean)
-            return (
-              <div key={p.id} className={`sell-card ${d ? 'in-draft' : s ? 'has-qty' : ''}`}>
-                <div className="sell-top">
-                  <button
-                    type="button"
-                    className="sell-main"
-                    onClick={() => (needsUpgrade ? change(p, { quantity: (r?.quantity || 0) + 1 }) : setPicker(p))}
-                  >
-                    <span className="sell-name">{p.name}</span>
-                    <span className="muted">{money(p.price)}</span>
-                    {tags.length > 0 && <span className="sell-tags">{tags.join(' · ')}</span>}
-                  </button>
-                  <button type="button" className="icon-btn sell-more" onClick={() => setExtra(p)} aria-label={`Tặng, giảm giá, hủy ${p.name}`}>
-                    <Ellipsis size={18} />
-                  </button>
-                </div>
-                <div className="sell-foot">
-                  {d ? (
-                    <span className="sell-draft">Trong đơn: {packText(d.ly, d.chai)}</span>
-                  ) : (
-                    <span className="muted small">{s ? `Đã bán ${packText(s.ly, s.chai)}` : 'Chưa bán'}</span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        <>
+          <div className="featured-head">
+            <h2>
+              <Star size={17} className="inline-icon featured-star" />
+              Món hôm nay{featuredList.length > 0 && ` (${featuredList.length})`}
+            </h2>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPickFeatured(true)}>
+              Chọn món
+            </button>
+          </div>
+          {featuredList.length === 0 ? (
+            <button type="button" className="featured-empty" onClick={() => setPickFeatured(true)}>
+              Bấm <b>Chọn món</b> để đưa vài món đang bán lên đầu và tô màu, khỏi phải lướt tìm.
+            </button>
+          ) : (
+            <div className="product-grid">{featuredList.map((p) => renderCard(p, true))}</div>
+          )}
+          {otherList.length > 0 &&
+            (featuredList.length === 0 ? (
+              <div className="product-grid others-grid">{otherList.map((p) => renderCard(p, false))}</div>
+            ) : (
+              <>
+                <button type="button" className="others-toggle" onClick={toggleOthers} aria-expanded={showOthers}>
+                  Món khác ({otherList.length})
+                  <ChevronDown size={18} className={showOthers ? 'rotated' : ''} />
+                </button>
+                {showOthers && <div className="product-grid others-grid">{otherList.map((p) => renderCard(p, false))}</div>}
+              </>
+            ))}
+        </>
       )}
 
       {orderRows.length > 0 && (
@@ -480,8 +543,6 @@ export default function Sales() {
           ))}
         </div>
       )}
-
-      <DayClosing date={date} revenue={revenue} deposits={deposits} />
 
       {draft && !needsUpgrade && (
         <>
@@ -520,6 +581,10 @@ export default function Sales() {
             setPicker(product)
           }}
         />
+      )}
+
+      {pickFeatured && (
+        <FeaturedPicker products={products} selected={featured} sold={sold} onClose={() => setPickFeatured(false)} onSave={saveFeatured} />
       )}
 
       {extra && (
@@ -584,85 +649,45 @@ function ExtraForm({ product, row, waste, onClose, onSave }) {
   )
 }
 
-// Chốt tiền cuối ngày: so tiền thực thu (két + chuyển khoản) với doanh thu trên sổ
-function DayClosing({ date, revenue, deposits }) {
-  const [form, setForm] = useState(null)
-  const [saved, setSaved] = useState(null)
-
-  useEffect(() => {
-    setForm(null)
-    supabase
-      .from('day_closings')
-      .select('*')
-      .eq('date', date)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (showError(error)) return
-        setSaved(data)
-        setForm({ cash: data?.cash ?? '', transfer: data?.transfer ?? '', note: data?.note || '' })
-      })
-  }, [date])
-
-  const [busy, onSubmit] = useSubmit(submit)
-
-  if (!form) return null
-  const collected = Number(form.cash || 0) + Number(form.transfer || 0)
-  const expected = revenue - deposits
-  const diff = collected - expected
-  const touched = form.cash !== '' || form.transfer !== ''
-
-  async function submit() {
-    const { data, error } = await supabase
-      .from('day_closings')
-      .upsert({ date, cash: Number(form.cash || 0), transfer: Number(form.transfer || 0), note: form.note.trim() || null }, { onConflict: 'date' })
-      .select()
-      .single()
-    if (!showError(error)) setSaved(data)
-  }
+// Chọn các món đang bán mấy hôm nay → lên đầu trang Bán hàng
+function FeaturedPicker({ products, selected, sold, onClose, onSave }) {
+  const [ids, setIds] = useState(() => new Set(selected))
+  const toggle = (id) =>
+    setIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   return (
-    <form className="card closing" onSubmit={onSubmit}>
-      <div className="section-head">
-        <h2>
-          <Wallet size={18} className="inline-icon" /> Chốt tiền cuối ngày
-        </h2>
-        {saved && <span className="badge badge-good">Đã chốt</span>}
-      </div>
-      <p className="muted small">
-        Chỉ để <b>đối chiếu</b> tiền thật với sổ — <b>không cộng</b> vào doanh thu. Không dùng cũng được, cứ để trống.
+    <Modal title="Món hôm nay" onClose={onClose}>
+      <p className="muted small" style={{ marginBottom: 12 }}>
+        Chọn các món đang bán. Giữ nguyên cho các ngày sau tới khi bạn đổi, mọi máy đều thấy giống nhau.
       </p>
-      <div className="form-row">
-        <Field label="Tiền mặt đang có trong két" hint="Đếm tiền thật, trừ tiền vốn để sẵn đầu ngày">
-          <MoneyInput value={form.cash} onChange={(v) => setForm({ ...form, cash: v })} />
-        </Field>
-        <Field label="Chuyển khoản nhận được" hint="Xem trong app ngân hàng">
-          <MoneyInput value={form.transfer} onChange={(v) => setForm({ ...form, transfer: v })} />
-        </Field>
+      <div className="featured-list">
+        {products.map((p) => {
+          const s = sold[p.id]
+          const n = s ? s.ly + s.chai : 0
+          return (
+            <label key={p.id} className={`featured-row ${ids.has(p.id) ? 'on' : ''}`}>
+              <input type="checkbox" checked={ids.has(p.id)} onChange={() => toggle(p.id)} />
+              <span className="grow">{p.name}</span>
+              {n > 0 && <span className="muted small">đã bán {n}</span>}
+            </label>
+          )
+        })}
       </div>
-      {touched && (
-        <div className="summary-box">
-          <div className="kv">
-            <span>Doanh thu trên sổ{deposits > 0 ? ` (trừ cọc đã thu trước ${money(deposits)})` : ''}</span>
-            <span>{money(expected)}</span>
-          </div>
-          <div className="kv">
-            <span>Thực thu</span>
-            <span>{money(collected)}</span>
-          </div>
-          <div className="kv">
-            <span>Chênh lệch</span>
-            <strong className={Math.abs(diff) < 1 ? 'good-text' : 'danger-text'}>
-              {Math.abs(diff) < 1 ? 'Khớp' : `${diff > 0 ? 'Dư' : 'Thiếu'} ${money(Math.abs(diff))}`}
-            </strong>
-          </div>
-        </div>
-      )}
-      <Field label="Ghi chú">
-        <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="VD: thiếu 10k do thối nhầm" />
-      </Field>
-      <div className="form-actions">
-        <SaveButton busy={busy}>{saved ? 'Cập nhật' : 'Chốt tiền'}</SaveButton>
+      <div className="form-actions featured-actions">
+        <button type="button" className="btn btn-danger-ghost" onClick={() => setIds(new Set())} disabled={ids.size === 0}>
+          Bỏ chọn hết
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Hủy
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => onSave(products.filter((p) => ids.has(p.id)).map((p) => p.id))}>
+          Lưu ({ids.size})
+        </button>
       </div>
-    </form>
+    </Modal>
   )
 }

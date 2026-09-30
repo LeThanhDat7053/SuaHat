@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ClipboardCheck, Plus, Trash2, Wheat } from 'lucide-react'
+import { ClipboardCheck, Plus, Search, Trash2, Wheat, X } from 'lucide-react'
 import { fetchAll, showError, supabase } from '../lib/supabase'
 import { loadStock, loadStockCached, peekStock } from '../lib/stock'
 import { useLive } from '../lib/live'
 import { BIG_UNIT, fmtDate, fmtQty, money, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
+import { ING_CATEGORIES, categoryOf, groupByCategory, guessCategory, plain } from '../lib/categories'
 
 // Đơn vị dùng trong công thức. Hạt/bột dùng g, nước/sữa dùng ml — lúc mua vẫn nhập theo kg / lít được.
 export const UNITS = ['g', 'ml', 'cái', 'hộp', 'gói', 'chai']
@@ -68,11 +69,22 @@ export default function Ingredients() {
 
 function StockList({ data, onEdit }) {
   const { ingredients, stock, lastCount } = data
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all') // 'all' | 'low' | tên nhóm
   if (ingredients.length === 0) return <Empty icon={Wheat}>Chưa có nguyên liệu. Bấm “+ Nguyên liệu” hoặc nhập hàng lần đầu.</Empty>
 
   const value = ingredients.reduce((s, g) => s + Math.max(0, stock[g.id]) * g.price_per_unit, 0)
-  const low = ingredients.filter((g) => g.min_stock > 0 && stock[g.id] < g.min_stock)
+  const isLow = (g) => g.min_stock > 0 && stock[g.id] < g.min_stock
+  const low = ingredients.filter(isLow)
   const neverCounted = ingredients.every((g) => !lastCount[g.id])
+
+  const q = plain(query.trim())
+  const shown = ingredients.filter(
+    (g) => (!q || plain(g.name).includes(q)) && (filter === 'all' || (filter === 'low' ? isLow(g) : categoryOf(g) === filter)),
+  )
+  const groups = groupByCategory(shown)
+  const counts = {}
+  ingredients.forEach((g) => (counts[categoryOf(g)] = (counts[categoryOf(g)] || 0) + 1))
 
   return (
     <>
@@ -87,37 +99,73 @@ function StockList({ data, onEdit }) {
         <StatTile label="Nguyên liệu" value={ingredients.length} />
         <StatTile label="Sắp hết" value={low.length} tone={low.length ? 'bad' : undefined} />
       </div>
-      <div className="card list-card">
-        {ingredients.map((g) => {
-          const s = stock[g.id]
-          const isLow = g.min_stock > 0 && s < g.min_stock
-          return (
-            <button key={g.id} className="list-row list-link" onClick={() => onEdit(g)}>
-              <div className="grow">
-                <div>
-                  {g.name} {isLow && <span className="badge badge-bad">Sắp hết</span>}
-                </div>
-                <div className="muted small">
-                  Giá {unitPrice(g.price_per_unit, g.unit)}
-                  {lastCount[g.id] ? ` · kiểm kê ${fmtDate(lastCount[g.id].date)}` : ' · chưa kiểm kê'}
-                  {g.min_stock > 0 && ` · báo khi dưới ${fmtQty(g.min_stock, g.unit)}`}
-                </div>
-              </div>
-              <div className="align-right">
-                <div className={`stock-qty ${s < 0 ? 'danger-text' : ''}`}>
-                  <span className="muted small">Còn </span>
-                  {fmtQty(s, g.unit)}
-                </div>
-                {s < 0 ? (
-                  <span className="muted small block">Chưa kiểm kê hoặc quên ghi nhập hàng</span>
-                ) : (
-                  <span className="stock-value">Trị giá {money(s * g.price_per_unit)}</span>
-                )}
-              </div>
+      <div className="ing-tools">
+        <label className="search-box">
+          <Search size={17} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm nguyên liệu…" aria-label="Tìm nguyên liệu" />
+          {query && (
+            <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label="Xóa tìm kiếm">
+              <X size={16} />
             </button>
-          )
-        })}
+          )}
+        </label>
+        <div className="chips">
+          <button type="button" className={`chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+            Tất cả ({ingredients.length})
+          </button>
+          {low.length > 0 && (
+            <button type="button" className={`chip chip-bad ${filter === 'low' ? 'active' : ''}`} onClick={() => setFilter('low')}>
+              Sắp hết ({low.length})
+            </button>
+          )}
+          {groupByCategory(ingredients).map(([cat]) => (
+            <button type="button" key={cat} className={`chip ${filter === cat ? 'active' : ''}`} onClick={() => setFilter(cat)}>
+              {cat} ({counts[cat]})
+            </button>
+          ))}
+        </div>
       </div>
+
+      {groups.length === 0 && <p className="muted" style={{ padding: '12px 4px' }}>Không tìm thấy nguyên liệu nào.</p>}
+      {groups.map(([cat, list]) => (
+        <div key={cat} className="card list-card">
+          <div className="list-head">
+            <span>
+              {cat} · {list.length}
+            </span>
+            <span>{money(list.reduce((s, g) => s + Math.max(0, stock[g.id]) * g.price_per_unit, 0))}</span>
+          </div>
+          {list.map((g) => {
+            const s = stock[g.id]
+            const isLow = g.min_stock > 0 && s < g.min_stock
+            return (
+              <button key={g.id} className="list-row list-link" onClick={() => onEdit(g)}>
+                <div className="grow">
+                  <div>
+                    {g.name} {isLow && <span className="badge badge-bad">Sắp hết</span>}
+                  </div>
+                  <div className="muted small">
+                    Giá {unitPrice(g.price_per_unit, g.unit)}
+                    {lastCount[g.id] ? ` · kiểm kê ${fmtDate(lastCount[g.id].date)}` : ' · chưa kiểm kê'}
+                    {g.min_stock > 0 && ` · báo khi dưới ${fmtQty(g.min_stock, g.unit)}`}
+                  </div>
+                </div>
+                <div className="align-right">
+                  <div className={`stock-qty ${s < 0 ? 'danger-text' : ''}`}>
+                    <span className="muted small">Còn </span>
+                    {fmtQty(s, g.unit)}
+                  </div>
+                  {s < 0 ? (
+                    <span className="muted small block">Chưa kiểm kê hoặc quên ghi nhập hàng</span>
+                  ) : (
+                    <span className="stock-value">Trị giá {money(s * g.price_per_unit)}</span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      ))}
     </>
   )
 }
@@ -237,41 +285,46 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
         {!expected ? (
           <Loading />
         ) : (
-          <div className="count-list">
-            {ingredients.map((g) => {
-              const v = values[g.id]
-              const diff = v === undefined || v === '' ? null : toBase(v, g.unit) - expected[g.id]
-              return (
-                <div key={g.id} className="count-row">
-                  <div className="grow">
-                    <div>{g.name}</div>
-                    <div className="muted small">
-                      Sổ sách: {fmtQty(expected[g.id], g.unit)}
-                      {diff !== null && Math.abs(diff) > 1e-9 && (
-                        <span className={diff < 0 ? 'danger-text' : 'good-text'}>
-                          {' '}
-                          · {diff > 0 ? '+' : ''}
-                          {fmtQty(diff, g.unit)}
-                        </span>
-                      )}
+          groupByCategory(ingredients).map(([cat, list]) => (
+            <div key={cat} className="count-group">
+              <div className="count-group-head">{cat}</div>
+              <div className="count-list">
+                {list.map((g) => {
+                  const v = values[g.id]
+                  const diff = v === undefined || v === '' ? null : toBase(v, g.unit) - expected[g.id]
+                  return (
+                    <div key={g.id} className="count-row">
+                      <div className="grow">
+                        <div>{g.name}</div>
+                        <div className="muted small">
+                          Sổ sách: {fmtQty(expected[g.id], g.unit)}
+                          {diff !== null && Math.abs(diff) > 1e-9 && (
+                            <span className={diff < 0 ? 'danger-text' : 'good-text'}>
+                              {' '}
+                              · {diff > 0 ? '+' : ''}
+                              {fmtQty(diff, g.unit)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="unit-input count-input">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          inputMode="decimal"
+                          value={v ?? ''}
+                          onChange={(e) => setValues((s) => ({ ...s, [g.id]: e.target.value }))}
+                          aria-label={`Tồn thực tế ${g.name}`}
+                        />
+                        <span>{bigOf(g.unit)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="unit-input count-input">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      inputMode="decimal"
-                      value={v ?? ''}
-                      onChange={(e) => setValues((s) => ({ ...s, [g.id]: e.target.value }))}
-                      aria-label={`Tồn thực tế ${g.name}`}
-                    />
-                    <span>{bigOf(g.unit)}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))
         )}
         <Field label="Ghi chú">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="VD: hạt điều bị ẩm 200g" />
@@ -314,6 +367,7 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
     // hạt / sữa nhập giá và mức báo hết theo kg / lít cho dễ, lưu lại theo g / ml
     price: ingredient.price_per_unit == null ? '' : +(ingredient.price_per_unit * (BIG_UNIT[ingredient.unit] ? 1000 : 1)).toFixed(2),
     min_stock: ingredient.min_stock ? +fromBase(ingredient.min_stock, ingredient.unit).toFixed(3) : '',
+    category: ingredient.category || '', // '' = tự xếp theo tên
   })
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const big = BIG_UNIT[form.unit]
@@ -326,6 +380,8 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
       price_per_unit: Number(form.price || 0) / (big ? 1000 : 1),
       min_stock: toBase(form.min_stock || 0, form.unit),
     }
+    // chỉ gửi cột nhóm khi đã có (đã chạy nang-cap-v6.sql) hoặc có chọn
+    if ('category' in ingredient || form.category) payload.category = form.category || null
     const { error } = ingredient.id
       ? await supabase.from('ingredients').update(payload).eq('id', ingredient.id)
       : await supabase.from('ingredients').insert(payload)
@@ -359,6 +415,14 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
             <input type="number" step="any" min="0" inputMode="decimal" value={form.price} onChange={(e) => set('price', e.target.value)} />
           </Field>
         </div>
+        <Field label="Nhóm" hint="Để tự động thì app xếp nhóm theo tên nguyên liệu">
+          <select value={form.category} onChange={(e) => set('category', e.target.value)}>
+            <option value="">Tự động ({guessCategory(form.name, form.unit)})</option>
+            {[...new Set([...ING_CATEGORIES, ...(form.category ? [form.category] : [])])].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </Field>
         <Field label={`Báo sắp hết khi còn dưới (${bigOf(form.unit)})`} hint="Để trống nếu không cần báo">
           <input
             type="number"
