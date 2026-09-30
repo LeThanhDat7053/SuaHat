@@ -3,32 +3,36 @@ import { Link } from 'react-router-dom'
 import { Copy, CupSoda, FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { BIG_UNIT, fmtQty, money, num } from '../lib/format'
-import { batchCost, productCost, toMap } from '../lib/cost'
+import { DEFAULT_MARGIN, batchCost, productCost, toMap } from '../lib/cost'
 import { CHAI_DEFAULTS, getChaiDefaults } from '../lib/quick'
+import { loadCatalog, peekCatalog } from '../lib/catalog'
+import { useLive } from '../lib/live'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton } from '../components/ui'
 
-export const DEFAULT_MARGIN = 40
+export { DEFAULT_MARGIN }
+
+// món đang bán lên trước, rồi theo tên
+const sortProducts = (c) => ({ ...c, products: [...c.products].sort((a, b) => b.active - a.active || a.name.localeCompare(b.name, 'vi')) })
 
 export default function Products() {
   const [tab, setTab] = useState('mon')
-  const [data, setData] = useState(null)
+  const [data, setData] = useState(() => {
+    const c = peekCatalog()
+    return c ? sortProducts(c) : null
+  })
   const [editing, setEditing] = useState(null)
   const [editRecipe, setEditRecipe] = useState(null)
   const [margin, setMargin] = useState(DEFAULT_MARGIN)
 
-  async function load() {
-    const [p, i, r] = await Promise.all([
-      supabase.from('products').select('*').order('active', { ascending: false }).order('name'),
-      supabase.from('ingredients').select('*').order('name'),
-      supabase.from('recipes').select('*').order('name'),
-    ])
-    if (showError(p.error || i.error || r.error)) return
-    setData({ products: p.data, ingredients: i.data, recipes: r.data })
+  function load() {
+    loadCatalog(0).then((c) => setData(sortProducts(c)), showError)
   }
   useEffect(() => {
     load()
     getSetting('margin_min', DEFAULT_MARGIN).then((v) => setMargin(Number(v)))
   }, [])
+
+  useLive(['products', 'ingredients', 'recipes'], load)
 
   const done = () => {
     setEditing(null)

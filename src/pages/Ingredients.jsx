@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ClipboardCheck, Plus, Trash2, Wheat } from 'lucide-react'
 import { fetchAll, showError, supabase } from '../lib/supabase'
-import { loadStock } from '../lib/stock'
+import { loadStock, loadStockCached, peekStock } from '../lib/stock'
+import { useLive } from '../lib/live'
 import { BIG_UNIT, fmtDate, fmtQty, money, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 
@@ -15,13 +16,13 @@ const bigOf = (unit) => BIG_UNIT[unit] || unit
 
 export default function Ingredients() {
   const [tab, setTab] = useState('ton')
-  const [data, setData] = useState(null)
+  const [data, setData] = useState(() => peekStock() || null)
   const [edit, setEdit] = useState(null)
   const [counting, setCounting] = useState(false)
 
   async function load() {
     try {
-      setData(await loadStock())
+      setData(await loadStockCached())
     } catch (e) {
       showError(e)
     }
@@ -29,6 +30,7 @@ export default function Ingredients() {
   useEffect(() => {
     load()
   }, [])
+  useLive(['ingredients', 'purchases', 'sales', 'waste', 'stock_counts', 'products', 'recipes'], load)
 
   const reload = () => {
     setEdit(null)
@@ -132,6 +134,7 @@ function CountHistory({ onChanged }) {
   useEffect(() => {
     load()
   }, [])
+  useLive(['stock_counts'], load)
 
   async function remove(r) {
     if (!confirm(`Xóa lần kiểm kê ${r.ingredients?.name} ngày ${fmtDate(r.date)}?`)) return

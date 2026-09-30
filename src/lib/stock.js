@@ -1,5 +1,6 @@
 import { fetchAll, supabase } from './supabase'
 import { productUsage, toMap } from './cost'
+import { cached, peek } from './cache'
 
 // Tồn kho từng nguyên liệu =
 //   số kiểm kê gần nhất (chưa kiểm kê thì tính từ 0)
@@ -65,3 +66,7 @@ export async function loadStock(until) {
 
   return { stock, lastCount, ingredients: ing.data, products: prod.data, recipes: rec.data }
 }
+
+// Tồn kho dùng lại trong 2 phút (tự tính lại ngay khi có nhập / bán / kiểm kê trên máy này)
+export const loadStockCached = (until) => cached(`stock:${until || ''}`, () => loadStock(until), 120000)
+export const peekStock = (until) => peek(`stock:${until || ''}`)

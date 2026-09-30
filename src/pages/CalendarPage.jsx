@@ -7,6 +7,9 @@ import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../
 import { linesTotal, orderItemsText, orderSource, syncOrderSales } from '../lib/orders'
 import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
 import { ReminderField, ReminderList } from '../components/Reminders'
+import { cached, peek } from '../lib/cache'
+import { loadCatalog } from '../lib/catalog'
+import { useLive } from '../lib/live'
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 export const STATUS = {
@@ -26,6 +29,15 @@ function gridDays(ym) {
 function shiftMonth(ym, n) {
   const [y, m] = ym.split('-').map(Number)
   return toDateStr(new Date(y, m - 1 + n, 1)).slice(0, 7)
+}
+
+async function fetchMonth(from, to) {
+  const [o, n] = await Promise.all([
+    supabase.from('orders').select('*').gte('order_date', from).lte('order_date', to).order('order_time', { nullsFirst: true }),
+    supabase.from('notes').select('*').gte('date', from).lte('date', to).order('created_at'),
+  ])
+  if (o.error || n.error) throw o.error || n.error
+  return { orders: o.data, notes: n.data }
 }
 
 export default function CalendarPage() {
@@ -50,18 +62,26 @@ export default function CalendarPage() {
   const from = days[0]
   const to = days[days.length - 1]
 
+  // tháng đã xem trong phiên này thì hiện ngay, tải mới ngầm
   async function load() {
-    const [o, n] = await Promise.all([
-      supabase.from('orders').select('*').gte('order_date', from).lte('order_date', to).order('order_time', { nullsFirst: true }),
-      supabase.from('notes').select('*').gte('date', from).lte('date', to).order('created_at'),
-    ])
-    if (showError(o.error || n.error)) return
-    setOrders(o.data)
-    setNotes(n.data)
+    try {
+      const d = await cached(`calendar:${from}`, () => fetchMonth(from, to))
+      setOrders(d.orders)
+      setNotes(d.notes)
+    } catch (e) {
+      showError(e)
+    }
   }
   useEffect(() => {
+    const c = peek(`calendar:${from}`)
+    if (c) {
+      setOrders(c.orders)
+      setNotes(c.notes)
+    }
     load()
   }, [month])
+
+  useLive(['orders', 'notes'], load)
 
   function pick(d) {
     setSelected(d)
@@ -300,13 +320,8 @@ export function OrderForm({ order, onClose, onSaved }) {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   useEffect(() => {
-    supabase
-      .from('products')
-      .select('id,name,price,active')
-      .order('active', { ascending: false })
-      .order('name')
-      .then(({ data, error }) => {
-        if (showError(error)) return
+    loadCatalog().then((c) => {
+        const data = [...c.products].sort((a, b) => b.active - a.active || a.name.localeCompare(b.name, 'vi'))
         setProducts(data)
         if (!order.id && !order.lines?.length && data[0]) set('lines', [{ product_id: data[0].id, name: data[0].name, qty: 1, price: data[0].price }])
       })

@@ -4,6 +4,9 @@ import { CupSoda, Ellipsis, Wallet, Trash2, ClipboardList, ClipboardPlus } from 
 import { showError, supabase } from '../lib/supabase'
 import { money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
+import { cached, peek } from '../lib/cache'
+import { loadCatalog, peekCatalog } from '../lib/catalog'
+import { useLive } from '../lib/live'
 import { CHAI_DEFAULTS, addLines, completeQuickOrder, getChaiDefaults, linesTotal, missingTable, packText } from '../lib/quick'
 import { DraftPanel, OrderCard, PackPicker, PriceForm, orderLabel } from '../components/QuickOrder'
 import { DateNav, Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
@@ -22,14 +25,40 @@ function loadDraft() {
   }
 }
 
+const activeProducts = (c) => c.products.filter((p) => p.active)
+const costOf = (c) => ({ ing: toMap(c.ingredients), rec: toMap(c.recipes) })
+
+// Dữ liệu bán hàng của 1 ngày
+async function fetchDay(date) {
+  const [s, w, o] = await Promise.all([
+    supabase.from('sales').select('*').eq('date', date),
+    supabase.from('waste').select('*').eq('date', date),
+    supabase.from('orders').select('deposit').eq('order_date', date).eq('status', 'done'),
+  ])
+  const error = s.error || w.error || o.error
+  if (error) throw error
+  const rows = {}
+  s.data.forEach((r) => r.product_id && r.source === '' && (rows[r.product_id] = r))
+  return {
+    rows,
+    dayRows: s.data,
+    waste: Object.fromEntries(w.data.map((r) => [r.product_id, r])),
+    deposits: o.data.reduce((sum, r) => sum + Number(r.deposit), 0),
+  }
+}
+const dayKey = (date) => `sales-day:${date}`
+
 export default function Sales() {
+  // có dữ liệu từ lần mở trước thì hiện ngay, tải mới ngầm phía sau
   const [date, setDate] = useState(todayStr())
-  const [products, setProducts] = useState(null)
-  const [costCtx, setCostCtx] = useState({ ing: {}, rec: {} })
-  const [rows, setRows] = useState({}) // product_id → dòng bán tại quán của ngày đang xem
-  const [dayRows, setDayRows] = useState([]) // mọi dòng bán trong ngày (cả đơn đặt, món đã ẩn)
-  const [waste, setWaste] = useState({}) // product_id → dòng hủy
-  const [deposits, setDeposits] = useState(0)
+  const [cat0] = useState(peekCatalog)
+  const [day0] = useState(() => peek(dayKey(todayStr())))
+  const [products, setProducts] = useState(() => (cat0 ? activeProducts(cat0) : null))
+  const [costCtx, setCostCtx] = useState(() => (cat0 ? costOf(cat0) : { ing: {}, rec: {} }))
+  const [rows, setRows] = useState(day0?.rows || {}) // product_id → dòng bán tại quán của ngày đang xem
+  const [dayRows, setDayRows] = useState(day0?.dayRows || []) // mọi dòng bán trong ngày (cả đơn đặt, món đã ẩn)
+  const [waste, setWaste] = useState(day0?.waste || {}) // product_id → dòng hủy
+  const [deposits, setDeposits] = useState(day0?.deposits || 0)
   const [extra, setExtra] = useState(null) // món đang mở "Tặng / giảm / hủy"
   const [status, setStatus] = useState('')
 
@@ -45,18 +74,15 @@ export default function Sales() {
   const timers = useRef({})
   const unsaved = useRef({})
 
-  useEffect(() => {
-    Promise.all([
-      supabase.from('products').select('*').eq('active', true).order('name'),
-      supabase.from('ingredients').select('*'),
-      supabase.from('recipes').select('*'),
-    ]).then(([p, i, r]) => {
-      if (showError(p.error || i.error || r.error)) return
-      setProducts(p.data)
-      setCostCtx({ ing: toMap(i.data), rec: toMap(r.data) })
-    })
+  function loadCat() {
+    loadCatalog(0).then((c) => {
+      setProducts(activeProducts(c))
+      setCostCtx(costOf(c))
+    }, showError)
     getChaiDefaults().then(setChaiDef)
-  }, [])
+  }
+  useEffect(loadCat, [])
+  useLive(['products', 'ingredients', 'recipes', 'settings'], loadCat)
 
   useEffect(() => {
     try {
@@ -118,30 +144,37 @@ export default function Sales() {
   // lưu ngay những thay đổi chưa kịp lưu khi rời trang
   useEffect(() => flush, [flush])
 
+  function applyDay(d) {
+    setRows(d.rows)
+    setDayRows(d.dayRows)
+    setWaste(d.waste)
+    setDeposits(d.deposits)
+  }
+
   async function loadDay(date, cancelled = () => false) {
-    const [s, w, o] = await Promise.all([
-      supabase.from('sales').select('*').eq('date', date),
-      supabase.from('waste').select('*').eq('date', date),
-      supabase.from('orders').select('deposit').eq('order_date', date).eq('status', 'done'),
-    ])
-    if (cancelled() || showError(s.error || w.error || o.error)) return
-    const map = {}
-    s.data.forEach((r) => r.product_id && r.source === '' && (map[r.product_id] = r))
-    setRows(map)
-    setDayRows(s.data)
-    setWaste(Object.fromEntries(w.data.map((r) => [r.product_id, r])))
-    setDeposits(o.data.reduce((sum, r) => sum + Number(r.deposit), 0))
+    try {
+      const d = await cached(dayKey(date), () => fetchDay(date))
+      if (!cancelled()) applyDay(d)
+    } catch (e) {
+      showError(e)
+    }
   }
 
   useEffect(() => {
     flush()
     let cancelled = false
-    setRows({})
+    applyDay(peek(dayKey(date)) || { rows: {}, dayRows: [], waste: {}, deposits: 0 })
     loadDay(date, () => cancelled)
     return () => {
       cancelled = true
     }
   }, [date, flush])
+
+  // máy khác bán / chốt đơn / giao đơn → cập nhật ngay. Đang có số gõ dở chưa lưu thì đợi lưu xong.
+  useLive(['sales', 'waste', 'orders', 'quick_orders'], () => {
+    loadPending()
+    if (Object.keys(unsaved.current).length === 0) loadDay(date)
+  })
 
   const lyCost = (product) => productCost(product, costCtx.ing, costCtx.rec)
 

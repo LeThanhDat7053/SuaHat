@@ -4,6 +4,7 @@ import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDate, fmtDateLong, money, periodRange, todayStr } from '../lib/format'
 import { missingTable } from '../lib/quick'
 import { ALL_DAYS, WEEKDAYS, applyRecurring, scheduleText } from '../lib/recurring'
+import { useLive } from '../lib/live'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton, useSubmit } from '../components/ui'
 
 const CATEGORIES = ['Mặt bằng', 'Điện', 'Nước', 'Nước đá', 'Gas', 'Lương nhân viên', 'Bao bì', 'Quảng cáo', 'Sửa chữa', 'Khác']
@@ -17,6 +18,7 @@ export default function Expenses() {
   const [editRec, setEditRec] = useState(null)
 
   async function load(force = false) {
+    // lần đầu trong ngày: ghi khoản định kỳ trước (thường chỉ mất 1 lượt), các lần sau bỏ qua
     try {
       await applyRecurring(force)
     } catch (e) {
@@ -35,6 +37,7 @@ export default function Expenses() {
   useEffect(() => {
     load()
   }, [period])
+  useLive(['expenses', 'recurring_expenses'], () => load())
 
   // Tạm dừng / chạy lại. Chạy lại thì ghi từ hôm nay, không ghi bù những ngày đã dừng.
   async function togglePause(r) {

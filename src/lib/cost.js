@@ -41,3 +41,6 @@ export function avgPrice(stock, oldPrice, quantity, total) {
 // Doanh thu / giá vốn của 1 dòng bán hàng
 export const saleRevenue = (r) => r.quantity * Number(r.unit_price) - Number(r.discount || 0)
 export const saleCost = (r) => (r.quantity + (r.gift_qty || 0)) * Number(r.unit_cost)
+
+// Mức lãi (% giá bán) dưới mức này thì báo "lãi mỏng"
+export const DEFAULT_MARGIN = 40

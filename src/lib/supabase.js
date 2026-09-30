@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { invalidateCache } from './cache'
 
 // Publishable key được thiết kế để công khai trên web (dữ liệu được bảo vệ bằng RLS + đăng nhập),
 // nên để sẵn giá trị mặc định: Netlify build được luôn mà không cần khai báo biến môi trường.
@@ -7,9 +8,17 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_c0qnJRVdJM
 
 export const isConfigured = Boolean(url && key)
 
+// Có lệnh ghi dữ liệu (thêm / sửa / xóa / gọi hàm) → làm cũ bộ nhớ tạm để lần đọc sau lấy số mới
+async function trackedFetch(input, init) {
+  const res = await fetch(input, init)
+  const method = (init?.method || 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD' && String(input?.url || input).includes('/rest/')) invalidateCache()
+  return res
+}
+
 // persistSession: lưu đăng nhập trong máy, chỉ mất khi bấm "Đăng xuất"
 export const supabase = isConfigured
-  ? createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true } })
+  ? createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true }, global: { fetch: trackedFetch } })
   : null
 
 export const ADMIN_USERNAME = 'admin'

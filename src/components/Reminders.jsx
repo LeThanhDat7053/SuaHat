@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlarmClock, Bell, BellOff } from 'lucide-react'
 import { showError } from '../lib/supabase'
+import { useLive } from '../lib/live'
 import {
   BEFORE_OPTIONS,
   askNotifyPermission,
@@ -80,6 +81,8 @@ export function ReminderWatcher() {
       .then(setItems)
       .catch(() => {}) // chưa nâng cấp database hoặc mất mạng: thử lại lần sau
   }, [])
+
+  useLive(['orders', 'notes'], load)
 
   useEffect(() => {
     load()

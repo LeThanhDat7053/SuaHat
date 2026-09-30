@@ -7,6 +7,7 @@ import { saleCost, saleRevenue } from '../lib/cost'
 import { completeQuickOrder, linesProfit, missingTable, reopenQuickOrder } from '../lib/quick'
 import { OrderCard, orderLabel } from '../components/QuickOrder'
 import { DateNav, Empty, Loading, PageHeader, StatTile } from '../components/ui'
+import { useLive } from '../lib/live'
 
 const sum = (rows, f) => rows.reduce((s, r) => s + f(r), 0)
 
@@ -36,6 +37,8 @@ export default function QuickOrders() {
       cancelled = true
     }
   }, [date, load])
+
+  useLive(['quick_orders', 'sales'], () => load(date))
 
   async function run(order, fn) {
     setBusy(order.id)

@@ -1,4 +1,5 @@
 import { getSetting, supabase } from './supabase'
+import { cached } from './cache'
 
 // Mức chung khi bán dạng Chai (từng món có thể đặt riêng: products.chai_surcharge / chai_cost)
 export const CHAI_DEFAULTS = { surcharge: 3000, cost: 2500 }
@@ -8,10 +9,8 @@ export const PACKS = { ly: 'Ly', chai: 'Chai' }
 // Chưa chạy file nang-cap-v3.sql → chưa có bảng quick_orders
 export const missingTable = (e) => e && (e.code === 'PGRST205' || e.code === '42P01' || e.code === 'PGRST202')
 
-export async function getChaiDefaults() {
-  const v = await getSetting('chai', null)
-  return { ...CHAI_DEFAULTS, ...(v || {}) }
-}
+export const getChaiDefaults = () =>
+  cached('chai-defaults', async () => ({ ...CHAI_DEFAULTS, ...((await getSetting('chai', null)) || {}) }), 300000)
 
 const has = (v) => v !== null && v !== undefined && v !== ''
 

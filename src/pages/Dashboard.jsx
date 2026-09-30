@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleQuestionMark, Download, TriangleAlert } from 'lucide-react'
 import { fetchAll, getSetting, showError, supabase } from '../lib/supabase'
-import { loadStock } from '../lib/stock'
-import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
+import { loadStockCached } from '../lib/stock'
+import { DEFAULT_MARGIN, productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { orderItemsText } from '../lib/orders'
 import { downloadXlsx } from '../lib/xlsx'
 import { applyRecurring } from '../lib/recurring'
+import { cached, peek } from '../lib/cache'
+import { useLive } from '../lib/live'
 import { addDays, daysBetween, fmtDate, fmtQty, fmtTime, money, moneyShort, monthRange, num, periodRange, todayStr } from '../lib/format'
 import { Loading, PageHeader, StatTile } from '../components/ui'
 import { STATUS } from './CalendarPage'
-import { DEFAULT_MARGIN } from './Products'
 
 const PRESETS = [
   { key: 'today', label: 'Hôm nay' },
@@ -64,12 +65,55 @@ function summarize(sales, waste) {
   return { revenue, cogs, wasteCost, cups, gross: revenue - cogs - wasteCost }
 }
 
+const reportKey = (r) => `dash:${r.from}:${r.to}`
+
+async function fetchReport(range) {
+  // ghi các chi phí định kỳ còn thiếu trước (mỗi ngày 1 lần), để số liệu có luôn khoản hôm nay
+  await applyRecurring().catch((e) => console.error(e))
+  const prev = prevRange(range)
+  const [cur, before] = await Promise.all([loadRange(range, true), loadRange(prev, false)])
+  return { ...cur, prev: { ...before, range: prev } }
+}
+
+async function fetchUpcoming() {
+  const t = todayStr()
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('status', 'pending')
+    .gte('order_date', t)
+    .lte('order_date', addDays(t, 7))
+    .order('order_date')
+    .order('order_time', { nullsFirst: true })
+  if (error) throw error
+  return data
+}
+
+// cảnh báo: nguyên liệu sắp hết, món lãi mỏng
+async function fetchAlerts() {
+  const [st, margin] = await Promise.all([loadStockCached(), getSetting('margin_min', DEFAULT_MARGIN)])
+  const ingMap = toMap(st.ingredients)
+  const recMap = toMap(st.recipes)
+  const low = st.ingredients.filter((g) => g.min_stock > 0 && st.stock[g.id] < g.min_stock)
+  const thin = st.products
+    .filter((p) => p.active && p.price > 0)
+    .map((p) => ({ ...p, pct: ((p.price - productCost(p, ingMap, recMap)) / p.price) * 100 }))
+    .filter((p) => p.pct < Number(margin))
+  return { low, thin, stock: st.stock, margin }
+}
+
 export default function Dashboard() {
+  // số của lần xem trước hiện ngay, tải mới ngầm phía sau
   const [preset, setPreset] = useState('month')
   const [range, setRange] = useState(presetRange('month'))
-  const [data, setData] = useState(null)
-  const [upcoming, setUpcoming] = useState([])
-  const [alerts, setAlerts] = useState(null)
+  const [data, setData] = useState(() => peek(reportKey(presetRange('month'))) || null)
+  const [upcoming, setUpcoming] = useState(() => peek('dash-upcoming') || [])
+  const [alerts, setAlerts] = useState(() => peek('dash-alerts') || null)
+  const [tick, setTick] = useState(0) // tăng lên khi có dữ liệu mới → tải lại
+  useLive(
+    ['sales', 'waste', 'purchases', 'expenses', 'stock_counts', 'day_closings', 'orders', 'products', 'ingredients', 'recipes', 'settings'],
+    () => setTick((t) => t + 1),
+  )
 
   function choose(key) {
     setPreset(key)
@@ -78,48 +122,21 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false
-    setData(null)
-    const prev = prevRange(range)
-    // ghi các chi phí định kỳ còn thiếu trước, để số liệu có luôn khoản hôm nay
-    applyRecurring()
-      .catch((e) => console.error(e))
-      .then(() => Promise.all([loadRange(range, true), loadRange(prev, false)]))
-      .then(
-      ([cur, before]) => !cancelled && setData({ ...cur, prev: { ...before, range: prev } }),
+    setData(peek(reportKey(range)) || null)
+    cached(reportKey(range), () => fetchReport(range)).then(
+      (d) => !cancelled && setData(d),
       (e) => showError(e),
     )
     return () => {
       cancelled = true
     }
-  }, [range])
+  }, [range, tick])
 
   useEffect(() => {
-    const t = todayStr()
-    supabase
-      .from('orders')
-      .select('*')
-      .eq('status', 'pending')
-      .gte('order_date', t)
-      .lte('order_date', addDays(t, 7))
-      .order('order_date')
-      .order('order_time', { nullsFirst: true })
-      .then(({ data, error }) => !showError(error) && setUpcoming(data))
-
-    // cảnh báo: nguyên liệu sắp hết, món lãi mỏng
-    Promise.all([loadStock(), getSetting('margin_min', DEFAULT_MARGIN)]).then(
-      ([st, margin]) => {
-        const ingMap = toMap(st.ingredients)
-        const recMap = toMap(st.recipes)
-        const low = st.ingredients.filter((g) => g.min_stock > 0 && st.stock[g.id] < g.min_stock)
-        const thin = st.products
-          .filter((p) => p.active && p.price > 0)
-          .map((p) => ({ ...p, pct: ((p.price - productCost(p, ingMap, recMap)) / p.price) * 100 }))
-          .filter((p) => p.pct < Number(margin))
-        setAlerts({ low, thin, stock: st.stock, margin })
-      },
-      (e) => console.error(e),
-    )
-  }, [])
+    cached('dash-upcoming', fetchUpcoming).then(setUpcoming, showError)
+    // tồn kho tính khá nặng: dùng lại trong 2 phút
+    cached('dash-alerts', fetchAlerts, 120000).then(setAlerts, (e) => console.error(e))
+  }, [tick])
 
   return (
     <>

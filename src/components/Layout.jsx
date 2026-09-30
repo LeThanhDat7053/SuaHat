@@ -1,7 +1,9 @@
-import { NavLink } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { LayoutDashboard, ShoppingBag, CalendarDays, PackagePlus, CupSoda, Receipt, Menu, LogOut, Wheat, CircleQuestionMark, ClipboardList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { ReminderWatcher } from './Reminders'
+import { useLiveStatus } from '../lib/live'
 
 export const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard, mobile: true },
@@ -20,6 +22,12 @@ export function logout() {
 }
 
 export default function Layout({ children }) {
+  const { pathname } = useLocation()
+  // sang trang khác thì lên đầu trang (không giữ chỗ cuộn của trang trước)
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -41,7 +49,10 @@ export default function Layout({ children }) {
         </button>
       </aside>
 
-      <main className="content">{children}</main>
+      <main className="content">
+        <OfflineNotice />
+        {children}
+      </main>
       <ReminderWatcher />
 
       <nav className="bottom-nav">
@@ -58,4 +69,11 @@ export default function Layout({ children }) {
       </nav>
     </div>
   )
+}
+
+// Mất kết nối đồng bộ → báo để biết số liệu có thể chưa mới (tự hết khi kết nối lại)
+function OfflineNotice() {
+  const status = useLiveStatus()
+  if (status !== 'offline') return null
+  return <div className="offline-notice">Mất kết nối — số liệu có thể chưa mới, app tự cập nhật khi có mạng lại.</div>
 }

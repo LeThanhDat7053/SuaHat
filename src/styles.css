@@ -803,3 +803,26 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .alarm-body { white-space: pre-line; color: var(--ink-2); }
 .alarm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .alarm-actions .btn-primary { flex: 1; min-height: 48px; }
+
+/* ---------- Mượt hơn khi chạm ---------- */
+/* bỏ độ trễ chờ "chạm 2 lần để phóng to" trên điện thoại */
+html { touch-action: manipulation; }
+/* bấm là thấy phản hồi ngay, không phải đợi mạng */
+.btn, .icon-btn, .chip, .bottom-link, .side-link, .list-link, .pack-btn, .draft-sum, .alarm-chip, .tabs button, .stepper button {
+  transition: transform 0.08s ease-out, background 0.15s, opacity 0.15s;
+}
+.btn:active:not(:disabled), .chip:active, .pack-btn:active, .alarm-chip:active { transform: scale(0.97); }
+.icon-btn:active:not(:disabled), .stepper button:active:not(:disabled) { transform: scale(0.9); background: var(--surface-2); }
+.bottom-link:active, .list-link:active, .tabs button:active { opacity: 0.6; }
+.sell-main { transition: background 0.1s; }
+.sell-card:active { transform: scale(0.985); }
+.sell-card { transition: border-color 0.15s, transform 0.08s ease-out; }
+/* thanh menu dưới: bỏ hiệu ứng làm mờ (blur) gây giật khi cuộn trên máy yếu */
+.bottom-nav { backdrop-filter: none; background: var(--surface); }
+/* cuộn trong popup không kéo theo trang phía sau */
+.modal-body, .draft-body, .pending-strip, .chips { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+.offline-notice { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; font-weight: 500; margin-bottom: 12px; }

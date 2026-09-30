@@ -1,18 +1,36 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { isConfigured, supabase } from './lib/supabase'
+import { startLive } from './lib/live'
 import Layout from './components/Layout'
+import { Loading } from './components/ui'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Sales from './pages/Sales'
 import CalendarPage from './pages/CalendarPage'
-import Purchases from './pages/Purchases'
-import Products from './pages/Products'
-import Expenses from './pages/Expenses'
-import More from './pages/More'
-import Ingredients from './pages/Ingredients'
-import Guide from './pages/Guide'
-import QuickOrders from './pages/QuickOrders'
+
+// Trang ít dùng tải riêng; tải sẵn ngầm lúc máy rảnh để bấm vào là có ngay
+const pages = {
+  Purchases: () => import('./pages/Purchases'),
+  Products: () => import('./pages/Products'),
+  Expenses: () => import('./pages/Expenses'),
+  More: () => import('./pages/More'),
+  Ingredients: () => import('./pages/Ingredients'),
+  Guide: () => import('./pages/Guide'),
+  QuickOrders: () => import('./pages/QuickOrders'),
+}
+const Purchases = lazy(pages.Purchases)
+const Products = lazy(pages.Products)
+const Expenses = lazy(pages.Expenses)
+const More = lazy(pages.More)
+const Ingredients = lazy(pages.Ingredients)
+const Guide = lazy(pages.Guide)
+const QuickOrders = lazy(pages.QuickOrders)
+
+function prefetchPages() {
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500))
+  idle(() => Object.values(pages).forEach((load) => load().catch(() => {})))
+}
 
 export default function App() {
   if (!isConfigured) return <SetupNeeded />
@@ -28,12 +46,19 @@ function AuthedApp() {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (!session) return
+    startLive()
+    prefetchPages()
+  }, [!!session])
+
   if (session === undefined) return <div className="splash">Sữa Hạt</div>
   if (!session) return <Login />
 
   return (
     <BrowserRouter>
       <Layout>
+        <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/ban-hang" element={<Sales />} />
@@ -47,6 +72,7 @@ function AuthedApp() {
           <Route path="/khac" element={<More />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </Layout>
     </BrowserRouter>
   )

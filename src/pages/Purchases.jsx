@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PackagePlus, Plus, Trash2 } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
-import { loadStock } from '../lib/stock'
+import { loadStockCached } from '../lib/stock'
+import { useLive } from '../lib/live'
 import { avgPrice } from '../lib/cost'
 import { BIG_UNIT, fmtDate, fmtQty, money, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton } from '../components/ui'
@@ -27,6 +28,7 @@ export default function Purchases() {
   useEffect(() => {
     load()
   }, [period])
+  useLive(['purchases'], load)
 
   async function remove(p) {
     if (!confirm(`Xóa lần nhập "${p.item_name}" (${money(p.total)})?\nGiá nguyên liệu không tự đổi lại, sửa tay ở trang Nguyên liệu nếu cần.`)) return
@@ -130,7 +132,7 @@ function PurchaseForm({ onClose, onSaved }) {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    loadStock().then(
+    loadStockCached().then(
       (d) => {
         setStock(d)
         setLines([emptyLine(d.ingredients)])
