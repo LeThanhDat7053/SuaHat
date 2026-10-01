@@ -23,6 +23,9 @@ function readDivs() {
   }
 }
 
+// Chữ gõ từ máy khác có thể bị tách dấu ("tô ́ c độ") → ghép lại cho đúng
+const nfc = (t) => String(t || '').normalize('NFC')
+
 const items = (list) => (Array.isArray(list) ? list : []).filter((r) => Number(r.amount) > 0)
 
 export default function Recipes() {
@@ -73,7 +76,7 @@ export default function Recipes() {
     const g = ingMap[r.ingredient_id]
     return (
       <div className="rx-row">
-        <span className="rx-ing">{g?.name || '(nguyên liệu đã xóa)'}</span>
+        <span className="rx-ing">{g ? nfc(g.name) : '(nguyên liệu đã xóa)'}</span>
         <span className="rx-amt">{fmtQty(Number(r.amount) / div, g?.unit || '')}</span>
       </div>
     )
@@ -137,7 +140,7 @@ export default function Recipes() {
                   <div className="rx-head">
                     <h2>
                       {hot && <Star size={16} className="inline-icon featured-star" aria-label="Món hôm nay" />}
-                      {r.name}
+                      {nfc(r.name)}
                     </h2>
                     <div className="rx-div" role="group" aria-label="Chia mẻ">
                       {DIVS.map((d) => (
@@ -167,7 +170,12 @@ export default function Recipes() {
                         Dùng cho: {used.map((p) => (star.has(p.id) ? `★ ${p.name}` : p.name)).join(', ')}
                       </span>
                     )}
-                    {r.note && <span className="muted small">Ghi chú: {r.note}</span>}
+                    {r.note && (
+                      <details className="rx-note">
+                        <summary>Cách làm / ghi chú</summary>
+                        <p>{nfc(r.note)}</p>
+                      </details>
+                    )}
                   </div>
                 </article>
               )

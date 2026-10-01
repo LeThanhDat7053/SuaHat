@@ -691,7 +691,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .pending { margin-bottom: 16px; }
 .pending .section-head { margin-bottom: 8px; }
 .pending-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
-.pending-strip .qorder { flex: 0 0 240px; scroll-snap-align: start; }
+.pending-strip .qorder { flex: 0 0 260px; scroll-snap-align: start; }
 .qorder-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .qorder {
   background: var(--yellow-soft);
@@ -947,14 +947,20 @@ html { touch-action: manipulation; }
 .vtags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .vactions { flex-wrap: wrap; }
 .vactions .btn-primary { flex: 1 1 190px; min-height: 50px; font-size: 1rem; }
-.qorder-line { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; font-size: 0.9rem; padding: 2px 0; }
-.qorder-name { min-width: 0; }
+.qorder-lines { gap: 0; }
+.qorder-line { display: flex; flex-direction: column; gap: 5px; font-size: 0.92rem; padding: 7px 0; border-top: 1px dashed rgba(154, 98, 0, 0.25); }
+.qorder-line:first-child { border-top: 0; padding-top: 2px; }
+.qorder-name { font-weight: 600; line-height: 1.35; }
+.qorder-line .vtags { justify-content: flex-start; gap: 5px; }
+.qorder-line .vtag { padding: 2px 9px; font-size: 0.82rem; }
 @media (max-width: 380px) { .vtile { min-height: 64px; } .vgrid { grid-template-columns: auto 1fr 1fr; gap: 6px; } }
 
 /* ---------- Công thức pha chế ---------- */
 .rx-search { margin-bottom: 10px; }
 .rx-tip { margin: 0 2px 12px; }
-.rx-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); align-items: start; }
+/* thẻ cùng hàng cao bằng thẻ dài nhất; phần "Ra được…" luôn nằm sát đáy cho thẳng hàng */
+.rx-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); align-items: stretch; }
+.rx-card .rx-foot { margin-top: auto; }
 .rx-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .rx-card.hot { background: #fffaf0; border-color: #f0d9a8; }
 .rx-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
@@ -967,6 +973,8 @@ html { touch-action: manipulation; }
 .rx-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 1.02rem; }
 .rx-amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 1.1rem; }
 .rx-foot { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.rx-note summary { cursor: pointer; color: var(--primary); font-weight: 600; font-size: 0.85rem; padding: 4px 0; }
+.rx-note p { white-space: pre-line; color: var(--ink-2); font-size: 0.88rem; line-height: 1.55; margin-top: 4px; }
 
 /* ---------- Chế độ pha chế ---------- */
 .barista-pill { margin: -8px 10px 12px; padding: 4px 10px; border-radius: 8px; background: var(--good-soft); color: var(--good); font-weight: 600; font-size: 0.85rem; }
@@ -1025,7 +1033,6 @@ html { touch-action: manipulation; }
   }
   .draft-body { max-height: 52dvh; }
   .draft-spacer { height: 72px; }
-  .rx-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
   .update-banner { bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom)); }
 }
 
