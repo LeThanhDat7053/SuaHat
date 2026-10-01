@@ -4,7 +4,8 @@ import { AlarmClock, BellOff, ChevronLeft, ChevronRight, Phone, Plus, StickyNote
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
-import { linesTotal, orderItemsText, orderSource, syncOrderSales } from '../lib/orders'
+import { deleteOrderSales, linePack, linesTotal, orderItemsText, packTotals, syncOrderSales } from '../lib/orders'
+import { CHAI_DEFAULTS, PACKS, getChaiDefaults, packPrice } from '../lib/quick'
 import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
 import { ReminderField, ReminderList } from '../components/Reminders'
 import { cached, peek } from '../lib/cache'
@@ -194,6 +195,10 @@ export default function CalendarPage() {
 
         <div className="day-panel">
           <h2 className="day-title">{fmtDateLong(selected)}</h2>
+          {(() => {
+            const t = packTotals(dayOrders.filter((o) => o.status !== 'cancelled'))
+            return t.text && <p className="day-packs">Tổng các đơn trong ngày: <strong>{t.text}</strong></p>
+          })()}
 
           {dayOrders.length === 0 && dayNotes.length === 0 && (
             <p className="muted">Không có đơn hay ghi chú nào trong ngày này.</p>
@@ -212,6 +217,7 @@ export default function CalendarPage() {
                 </span>
               </div>
               {orderItemsText(o) && <p className="order-items">{orderItemsText(o, '\n')}</p>}
+              {o.lines?.length > 0 && <p className="order-packs">Tổng: {packTotals([o]).text}</p>}
               {o.lines?.length > 0 && o.items && <p className="muted small">{o.items}</p>}
               {o.note && <p className="muted small">Ghi chú: {o.note}</p>}
               <div className="order-money small">
@@ -317,19 +323,26 @@ export function OrderForm({ order, onClose, onSaved }) {
   })
   const [remind, setRemind] = useState(() => reminderForm(order, `${order.order_date || todayStr()}T08:00`))
   const [busy, setBusy] = useState(false)
+  const [chaiDef, setChaiDef] = useState(CHAI_DEFAULTS)
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   useEffect(() => {
-    loadCatalog().then((c) => {
-        const data = [...c.products].sort((a, b) => b.active - a.active || a.name.localeCompare(b.name, 'vi'))
-        setProducts(data)
-        if (!order.id && !order.lines?.length && data[0]) set('lines', [{ product_id: data[0].id, name: data[0].name, qty: 1, price: data[0].price }])
-      })
+    Promise.all([loadCatalog(), getChaiDefaults()]).then(([c, def]) => {
+      const data = [...c.products].sort((a, b) => b.active - a.active || a.name.localeCompare(b.name, 'vi'))
+      setProducts(data)
+      setChaiDef(def)
+      if (!order.id && !order.lines?.length && data[0])
+        set('lines', [{ product_id: data[0].id, name: data[0].name, pack: 'ly', qty: 1, price: data[0].price }])
+    })
   }, [])
 
   const setLine = (i, patch) => set('lines', form.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
+  // đổi món / đổi Ly ↔ Chai → giá tự theo giá bán (Chai = Ly + phụ thu), vẫn sửa tay được
+  const pickLine = (i, product, pack) =>
+    setLine(i, product ? { product_id: product.id, name: product.name, pack, price: packPrice(product, pack, chaiDef) } : { pack })
   const lines = form.lines.filter((l) => l.product_id && Number(l.qty) > 0)
   const hasLines = lines.length > 0
+  const packs = packTotals([{ lines }])
   const sub = linesTotal(lines)
   const total = hasLines ? Math.max(0, sub - Number(form.discount || 0)) : Number(form.total || 0)
 
@@ -349,7 +362,13 @@ export function OrderForm({ order, onClose, onSaved }) {
       order_time: form.order_time || null,
       customer: form.customer.trim(),
       phone: form.phone.trim() || null,
-      lines: lines.map((l) => ({ product_id: Number(l.product_id), name: l.name, qty: Math.floor(Number(l.qty)), price: Number(l.price || 0) })),
+      lines: lines.map((l) => ({
+        product_id: Number(l.product_id),
+        name: l.name,
+        pack: linePack(l),
+        qty: Math.floor(Number(l.qty)),
+        price: Number(l.price || 0),
+      })),
       items: form.items.trim() || null,
       discount: hasLines ? Number(form.discount || 0) : 0,
       total,
@@ -370,7 +389,7 @@ export function OrderForm({ order, onClose, onSaved }) {
 
   async function remove() {
     if (!confirm(`Xóa đơn của ${order.customer}?${order.status === 'done' ? '\nDoanh thu của đơn này cũng bị gỡ khỏi bán hàng.' : ''}`)) return
-    const del = await supabase.from('sales').delete().eq('source', orderSource(order.id))
+    const del = await deleteOrderSales(order.id)
     if (showError(del.error)) return
     const { error } = await supabase.from('orders').delete().eq('id', order.id)
     if (!showError(error)) onSaved(order.order_date)
@@ -406,7 +425,8 @@ export function OrderForm({ order, onClose, onSaved }) {
                   value={l.product_id}
                   onChange={(e) => {
                     const p = products.find((x) => String(x.id) === e.target.value)
-                    setLine(i, p ? { product_id: p.id, name: p.name, price: p.price } : { product_id: '' })
+                    if (p) pickLine(i, p, linePack(l))
+                    else setLine(i, { product_id: '' })
                   }}
                 >
                   <option value="">— Chọn món —</option>
@@ -417,6 +437,19 @@ export function OrderForm({ order, onClose, onSaved }) {
                     </option>
                   ))}
                 </select>
+                <div className="pack-toggle" role="group" aria-label="Ly hay Chai">
+                  {Object.entries(PACKS).map(([pack, label]) => (
+                    <button
+                      key={pack}
+                      type="button"
+                      className={linePack(l) === pack ? 'active' : ''}
+                      aria-pressed={linePack(l) === pack}
+                      onClick={() => pickLine(i, products.find((x) => x.id === Number(l.product_id)), pack)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="number"
                   min="1"
@@ -434,10 +467,15 @@ export function OrderForm({ order, onClose, onSaved }) {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => set('lines', [...form.lines, { product_id: '', name: '', qty: 1, price: '' }])}
+              onClick={() => set('lines', [...form.lines, { product_id: '', name: '', pack: 'ly', qty: 1, price: '' }])}
             >
               <Plus size={16} /> Thêm món
             </button>
+            {packs.text && (
+              <p className="order-packs">
+                Tổng: <strong>{packs.text}</strong>
+              </p>
+            )}
           </div>
         </div>
         <Field label="Ghi chú món" hint="Ít đường, không đá…">

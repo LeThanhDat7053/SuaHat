@@ -397,9 +397,8 @@ function toGrid(items, ingMap) {
   items.forEach((r) => {
     const g = ingMap[r.ingredient_id]
     if (!g) return
-    const big = BIG_UNIT[g.unit]
     const a = Number(r.amount)
-    grid[g.id] = big && a >= 1000 ? { value: +(a / 1000).toFixed(3), unit: big } : { value: a, unit: g.unit }
+    grid[g.id] = { value: a, unit: g.unit } // mặc định g / ml cho dễ cân đong, vẫn đổi sang kg / lít được
   })
   return grid
 }
@@ -420,7 +419,7 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
   const list = [...ingredients].sort((a, b) => rank(a) - rank(b))
   const set = (id, patch) => {
     const g = ingMap[id]
-    const cur = grid[id] || { value: '', unit: BIG_UNIT[g.unit] || g.unit }
+    const cur = grid[id] || { value: '', unit: g.unit }
     onChange({ ...grid, [id]: { ...cur, ...patch } })
   }
   if (ingredients.length === 0) {
@@ -434,7 +433,7 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
     <div className="count-list">
       {list.map((g) => {
         const big = BIG_UNIT[g.unit]
-        const cell = grid[g.id] || { value: '', unit: big || g.unit }
+        const cell = grid[g.id] || { value: '', unit: g.unit }
         const base = Number(cell.value || 0) * (cell.unit === big ? 1000 : 1)
         return (
           <div key={g.id} className={`count-row ${base > 0 ? 'is-used' : ''}`}>
@@ -454,8 +453,8 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
               />
               {big ? (
                 <select value={cell.unit} onChange={(e) => set(g.id, { unit: e.target.value })} aria-label="Đơn vị">
-                  <option>{big}</option>
                   <option>{g.unit}</option>
+                  <option>{big}</option>
                 </select>
               ) : (
                 <span className="muted grid-unit">{g.unit}</span>
@@ -471,12 +470,12 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
 function RecipeForm({ recipe, ingredients, products, onClose, onSaved, onDuplicate }) {
   // "Mẻ ra được" nhập theo lít, ml hoặc số chai của các size đang bán
   const sizes = [...new Set(products.map((p) => Number(p.volume_ml)).filter((v) => v > 0))].sort((a, b) => b - a)
-  const yieldUnits = [['lít', 1000], ['ml', 1], ...sizes.map((v) => [`chai ${num(v)}ml`, v])]
+  const yieldUnits = [['ml', 1], ['lít', 1000], ...sizes.map((v) => [`chai ${num(v)}ml`, v])]
   const [form, setForm] = useState({
     name: recipe.name || '',
     grid: toGrid(recipe.items || [], toMap(ingredients)),
-    yield_value: recipe.yield_ml ? +(recipe.yield_ml / 1000).toFixed(3) : '',
-    yield_unit: 'lít',
+    yield_value: recipe.yield_ml ? +Number(recipe.yield_ml).toFixed(1) : '',
+    yield_unit: 'ml',
     note: recipe.note || '',
   })
   const [busy, setBusy] = useState(false)
@@ -517,7 +516,7 @@ function RecipeForm({ recipe, ingredients, products, onClose, onSaved, onDuplica
         </Field>
         <div className="field">
           <span className="field-label">Nguyên liệu cho 1 mẻ</span>
-          <span className="field-hint">Gõ lượng của 1 lần nấu thực tế vào nguyên liệu có dùng, không dùng thì để trống. VD: 1 kg hạt điều, 9 lít nước, 300 g đường</span>
+          <span className="field-hint">Gõ lượng của 1 lần nấu thực tế vào nguyên liệu có dùng, không dùng thì để trống. VD: 1000 g hạt điều, 9000 ml nước, 300 g đường</span>
           <IngredientGrid grid={form.grid} onChange={(v) => set('grid', v)} ingredients={ingredients} firstIds={firstIds} />
         </div>
         <Field label="Mẻ ra được" hint="Lượng thành phẩm thực tế sau khi lọc bã. Mẻ nào ra ít hơn thì sửa lại số này.">

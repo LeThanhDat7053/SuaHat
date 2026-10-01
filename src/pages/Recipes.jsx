@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FlaskConical, Search, Star, X } from 'lucide-react'
 import { showError } from '../lib/supabase'
-import { fmtQty, num } from '../lib/format'
+import { num } from '../lib/format'
 import { toMap } from '../lib/cost'
 import { peek } from '../lib/cache'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
@@ -11,6 +11,9 @@ import { plain } from '../lib/categories'
 import { useLive } from '../lib/live'
 import { useBarista } from '../lib/barista'
 import { Empty, Loading, PageHeader } from '../components/ui'
+
+// Luôn ghi g / ml (không đổi sang kg / lít) cho khớp với cân, ca đong
+const qty = (q, unit) => `${num(q, 1)} ${unit}`
 
 // Chia mẻ: ÷2 = nấu nửa mẻ → mọi nguyên liệu tự giảm một nửa, khỏi tính nhẩm
 const DIVS = [1, 2, 3, 4, 5]
@@ -77,7 +80,7 @@ export default function Recipes() {
     return (
       <div className="rx-row">
         <span className="rx-ing">{g ? nfc(g.name) : '(nguyên liệu đã xóa)'}</span>
-        <span className="rx-amt">{fmtQty(Number(r.amount) / div, g?.unit || '')}</span>
+        <span className="rx-amt">{qty(Number(r.amount) / div, g?.unit || '')}</span>
       </div>
     )
   }
@@ -157,7 +160,7 @@ export default function Recipes() {
                   <div className="rx-foot">
                     {r.yield_ml > 0 && (
                       <span>
-                        Ra được ≈ <b>{fmtQty(r.yield_ml / div, 'ml')}</b>
+                        Ra được ≈ <b>{qty(r.yield_ml / div, 'ml')}</b>
                         {used
                           .filter((p) => p.volume_ml > 0)
                           .slice(0, 2)
