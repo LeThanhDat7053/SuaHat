@@ -244,6 +244,9 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
   const [values, setValues] = useState({})
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [query, setQuery] = useState('')
+  const [cat, setCat] = useState('all') // 'all' | 'todo' (chưa nhập) | tên nhóm
+  const [todo, setTodo] = useState(() => new Set()) // "Chưa nhập": chốt danh sách lúc bấm, gõ số xong không bị mất dòng
 
   useEffect(() => {
     setExpected(null)
@@ -253,7 +256,12 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
     )
   }, [date])
 
-  const filled = ingredients.filter((g) => values[g.id] !== undefined && values[g.id] !== '')
+  const isFilled = (g) => values[g.id] !== undefined && values[g.id] !== ''
+  const filled = ingredients.filter(isFilled)
+  // lọc theo nhóm / tên: số đã gõ ở nhóm khác vẫn giữ nguyên, chỉ ẩn đi
+  const q = plain(query.trim())
+  const shown = ingredients.filter((g) => (!q || plain(g.name).includes(q)) && (cat === 'all' || (cat === 'todo' ? todo.has(g.id) : categoryOf(g) === cat)))
+  const allGroups = groupByCategory(ingredients)
   const loss = expected
     ? filled.reduce((s, g) => s + (expected[g.id] - toBase(values[g.id], g.unit)) * g.price_per_unit, 0)
     : 0
@@ -282,10 +290,46 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
           <input type="date" value={date} max={todayStr()} onChange={(e) => e.target.value && setDate(e.target.value)} required />
         </Field>
         <p className="muted small">Cân / đếm hàng thực tế rồi nhập vào. Món nào không kiểm thì để trống.</p>
+        <div className="count-tools">
+          <label className="search-box">
+            <Search size={17} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm nguyên liệu…" aria-label="Tìm nguyên liệu" />
+            {query && (
+              <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label="Xóa tìm kiếm">
+                <X size={16} />
+              </button>
+            )}
+          </label>
+          <div className="chips">
+            <button type="button" className={`chip ${cat === 'all' ? 'active' : ''}`} onClick={() => setCat('all')}>
+              Tất cả ({filled.length}/{ingredients.length})
+            </button>
+            <button
+              type="button"
+              className={`chip ${cat === 'todo' ? 'active' : ''}`}
+              onClick={() => {
+                setTodo(new Set(ingredients.filter((g) => !isFilled(g)).map((g) => g.id)))
+                setCat('todo')
+              }}
+            >
+              Chưa nhập ({ingredients.length - filled.length})
+            </button>
+            {allGroups.map(([c, list]) => {
+              const done = list.filter(isFilled).length
+              return (
+                <button type="button" key={c} className={`chip ${cat === c ? 'active' : ''} ${done === list.length ? 'chip-done' : ''}`} onClick={() => setCat(c)}>
+                  {c} ({done}/{list.length})
+                </button>
+              )
+            })}
+          </div>
+        </div>
         {!expected ? (
           <Loading />
+        ) : shown.length === 0 ? (
+          <p className="muted small">Không có nguyên liệu nào khớp.</p>
         ) : (
-          groupByCategory(ingredients).map(([cat, list]) => (
+          groupByCategory(shown).map(([cat, list]) => (
             <div key={cat} className="count-group">
               <div className="count-group-head">{cat}</div>
               <div className="count-list">

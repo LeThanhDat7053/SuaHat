@@ -80,6 +80,31 @@ export default function Expenses() {
         </div>
       )}
 
+      <details className="card explain">
+        <summary>Chi phí khác được tính vào lãi / lỗ thế nào?</summary>
+        <div className="explain-body">
+          <p>
+            <b>Lãi gộp</b> (trang Bán hàng) = Doanh thu − Giá vốn nguyên liệu − Hàng hủy. <i>Chưa trừ</i> chi phí khác.
+          </p>
+          <p>
+            <b>Lãi</b> (trang Tổng quan) = Lãi gộp − Hao hụt kiểm kê − <b>Chi phí khác</b>. Đây là số lời / lỗ thật của quán.
+          </p>
+          <p>
+            <b>Tiền còn lại</b> (Tổng quan) = Doanh thu − Tiền nhập hàng − <b>Chi phí khác</b>: tiền mặt thực sự còn trong tay.
+          </p>
+          <p>
+            Mỗi khoản được tính <b>trọn vào ngày ghi</b>. VD: ghi tiền mặt bằng 6 triệu vào ngày 1 → xem theo ngày, hôm đó lỗ nặng, các ngày khác trông lời
+            hơn thực tế; xem theo tháng thì đúng.
+          </p>
+          <p>
+            Muốn xem theo ngày / tuần cho sát: tạo khoản <b>Định kỳ mỗi ngày</b> với số đã chia đều (6.000.000đ ÷ 30 = 200.000đ/ngày) thay vì ghi 1 lần.
+          </p>
+          <p className="muted small">
+            Lưu ý: bao bì (chai, nắp, ly…) đã có trong công thức món thì không ghi thêm ở đây, kẻo bị trừ 2 lần.
+          </p>
+        </div>
+      </details>
+
       {recurring && (
         <div className="card list-card recurring-card">
           <div className="list-head">

@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { Check, Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import { Check, Flame, Minus, Pencil, Plus, RotateCcw, Snowflake, Trash2, X } from 'lucide-react'
 import { money } from '../lib/format'
-import { PACKS, chaiExtraCost, chaiSurcharge, linesProfit, linesTotal, packCost, packPrice, packText } from '../lib/quick'
+import { PACKS, TEMPS, chaiExtraCost, chaiSurcharge, lineKey, linesProfit, linesTotal, packCost, packPrice, variantText } from '../lib/quick'
 import { setSetting, showError, supabase } from '../lib/supabase'
 import { Field, Modal, MoneyInput, SaveButton, useSubmit } from './ui'
 
@@ -26,50 +26,130 @@ function Stepper({ value, onChange, label }) {
   )
 }
 
-// Popup khi bấm vào món: chọn số Ly / Chai rồi bấm OK
+// Lần chọn gần nhất trên máy này (VD: quán bán đá nhiều → mở popup là sẵn 1 Ly đá)
+const LAST_KEY = 'pack-last'
+function readLast() {
+  try {
+    const [pack, temp] = (localStorage.getItem(LAST_KEY) || '').split(':')
+    return pack in PACKS && temp in TEMPS ? `${pack}:${temp}` : 'ly:da'
+  } catch {
+    return 'ly:da'
+  }
+}
+
+const TEMP_ICON = { da: Snowflake, nong: Flame }
+
+// Nhãn "2 Ly đá" có màu: xanh = đá, cam = nóng
+export function VariantTag({ pack, temp, qty }) {
+  const Icon = TEMP_ICON[temp]
+  return (
+    <span className={`vtag ${temp ? `vtag-${temp}` : ''}`}>
+      {qty != null && <b>{qty}</b>}
+      {Icon && <Icon size={13} aria-hidden="true" />}
+      {variantText(pack, temp)}
+    </span>
+  )
+}
+
+// Popup khi bấm vào món: bấm ô Đá / Nóng của Ly / Chai để thêm (bấm nhiều lần = nhiều phần), rồi OK.
+// Kết hợp tùy ý, VD 3 ly = 2 đá + 1 nóng.
 export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }) {
-  const [qty, setQty] = useState({ ly: 1, chai: 0 })
+  const [qty, setQty] = useState(() => ({ [readLast()]: 1 }))
   const price = { ly: packPrice(product, 'ly', def), chai: packPrice(product, 'chai', def) }
-  const count = qty.ly + qty.chai
-  const total = qty.ly * price.ly + qty.chai * price.chai
+  const get = (k) => qty[k] || 0
+  const bump = (k, d) => setQty((q) => ({ ...q, [k]: Math.max(0, (q[k] || 0) + d) }))
+  const lines = Object.keys(PACKS).flatMap((pack) =>
+    Object.keys(TEMPS).map((temp) => ({
+      product_id: product.id,
+      name: product.name,
+      pack,
+      temp,
+      qty: get(`${pack}:${temp}`),
+      price: price[pack],
+      cost: packCost(product, pack, lyCost, def),
+    })),
+  )
+  const chosen = lines.filter((l) => l.qty > 0)
+  const count = chosen.reduce((s, l) => s + l.qty, 0)
+  const total = linesTotal(chosen)
 
   function ok(e) {
     e.preventDefault()
     if (count === 0) return onClose()
-    onAdd(
-      Object.keys(PACKS).map((pack) => ({
-        product_id: product.id,
-        name: product.name,
-        pack,
-        qty: qty[pack],
-        price: price[pack],
-        cost: packCost(product, pack, lyCost, def),
-      })),
-    )
+    const top = chosen.reduce((a, b) => (b.qty > a.qty ? b : a))
+    try {
+      localStorage.setItem(LAST_KEY, `${top.pack}:${top.temp}`)
+    } catch {
+      /* máy chặn lưu trữ: bỏ qua */
+    }
+    onAdd(chosen)
   }
 
   return (
     <Modal title={product.name} onClose={onClose}>
       <form className="form" onSubmit={ok}>
-        {Object.entries(PACKS).map(([pack, label]) => (
-          <div key={pack} className={`pack-row ${qty[pack] > 0 ? 'on' : ''}`}>
-            <button type="button" className="pack-btn" onClick={() => setQty({ ...qty, [pack]: qty[pack] + 1 })}>
-              <strong>{label}</strong>
-              <span>{money(price[pack])}</span>
-              {pack === 'chai' && <span className="muted small">Ly + {money(chaiSurcharge(product, def))}</span>}
+        <div className="vgrid">
+          <span />
+          {Object.entries(TEMPS).map(([temp, label]) => {
+            const Icon = TEMP_ICON[temp]
+            return (
+              <span key={temp} className={`vgrid-col vtemp-${temp}`}>
+                <Icon size={16} aria-hidden="true" /> {label}
+              </span>
+            )
+          })}
+          {Object.entries(PACKS).map(([pack, label]) => (
+            <Fragment key={pack}>
+              <div className="vgrid-pack">
+                <strong>{label}</strong>
+                <span>{money(price[pack])}</span>
+                {pack === 'chai' && <span className="muted small">+{money(chaiSurcharge(product, def))}</span>}
+              </div>
+              {Object.entries(TEMPS).map(([temp, tLabel]) => {
+                const k = `${pack}:${temp}`
+                const n = get(k)
+                const name = `${label} ${tLabel.toLowerCase()}`
+                return (
+                  <div key={k} className={`vtile vtemp-${temp} ${n > 0 ? 'on' : ''}`}>
+                    <button type="button" className="vtile-add" onClick={() => bump(k, 1)} aria-label={`Thêm 1 ${name}`}>
+                      {n > 0 ? <span className="vtile-n">{n}</span> : <Plus size={22} />}
+                    </button>
+                    {n > 0 && (
+                      <button type="button" className="vtile-minus" onClick={() => bump(k, -1)} aria-label={`Bớt 1 ${name}`}>
+                        <Minus size={16} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </Fragment>
+          ))}
+        </div>
+        <div className="vsum">
+          {count === 0 ? (
+            <span className="muted small">Bấm ô Đá / Nóng để thêm. Bấm nhiều lần = nhiều phần.</span>
+          ) : (
+            <>
+              {chosen.map((l) => (
+                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} qty={l.qty} />
+              ))}
+              <button type="button" className="link-btn vsum-clear" onClick={() => setQty({})}>
+                Chọn lại
+              </button>
+            </>
+          )}
+        </div>
+        <div className="form-actions vactions">
+          {onEditPrice && (
+            <button type="button" className="btn btn-ghost btn-edit-price" onClick={onEditPrice}>
+              <Pencil size={16} /> Chỉnh giá
             </button>
-            <Stepper value={qty[pack]} onChange={(v) => setQty({ ...qty, [pack]: v })} label={label} />
-          </div>
-        ))}
-        <div className="form-actions">
-          <button type="button" className="btn btn-ghost btn-edit-price" onClick={onEditPrice}>
-            <Pencil size={16} /> Chỉnh giá
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          )}
+          <button type="button" className="btn btn-ghost vbtn-cancel" onClick={onClose}>
             Hủy
           </button>
           <button className="btn btn-primary" autoFocus>
-            OK{count > 0 && ` · ${money(total)}`}
+            OK{count > 0 && ` · ${count} phần · ${money(total)}`}
           </button>
         </div>
       </form>
@@ -161,13 +241,14 @@ export function PriceForm({ product, lyCost, def, onClose, onSaved }) {
   )
 }
 
-// Gộp dòng theo món: [{ name, ly, chai }]
+// Gộp dòng theo món: [{ product_id, name, lines }]
 function groupLines(lines) {
   const out = []
   lines.forEach((l) => {
+    if (!(l.qty > 0)) return
     let g = out.find((x) => x.product_id === l.product_id)
-    if (!g) out.push((g = { product_id: l.product_id, name: l.name, ly: 0, chai: 0 }))
-    g[l.pack] += l.qty
+    if (!g) out.push((g = { product_id: l.product_id, name: l.name, lines: [] }))
+    g.lines.push(l)
   })
   return out
 }
@@ -187,9 +268,13 @@ export function OrderCard({ order, busy, editing, showProfit, onDone, onEdit, on
       </div>
       <div className="qorder-lines">
         {groupLines(order.lines).map((g) => (
-          <div key={g.product_id} className="kv">
-            <span>{g.name}</span>
-            <span>{packText(g.ly, g.chai)}</span>
+          <div key={g.product_id} className="qorder-line">
+            <span className="qorder-name">{g.name}</span>
+            <span className="vtags">
+              {g.lines.map((l) => (
+                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} qty={l.qty} />
+              ))}
+            </span>
           </div>
         ))}
       </div>
@@ -243,12 +328,12 @@ export function DraftPanel({ draft, onChange, onSubmit, onCancel, busy }) {
             <p className="muted small">Bấm vào món để thêm vào đơn.</p>
           ) : (
             lines.map((l, i) => (
-              <div key={`${l.product_id}:${l.pack}`} className="draft-line">
+              <div key={lineKey(l)} className="draft-line">
                 <span className="grow">
-                  {l.name} <b>{PACKS[l.pack]}</b>
+                  {l.name} <VariantTag pack={l.pack} temp={l.temp} />
                   <span className="muted small"> · {money(l.price)}</span>
                 </span>
-                <Stepper value={l.qty} onChange={(v) => setQty(i, v)} label={`${l.name} ${PACKS[l.pack]}`} />
+                <Stepper value={l.qty} onChange={(v) => setQty(i, v)} label={`${l.name} ${variantText(l.pack, l.temp)}`} />
               </div>
             ))
           )}

@@ -1,13 +1,15 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { isConfigured, supabase } from './lib/supabase'
 import { startLive } from './lib/live'
+import { BARISTA_PATHS, useBarista } from './lib/barista'
 import Layout from './components/Layout'
 import { Loading } from './components/ui'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Sales from './pages/Sales'
 import CalendarPage from './pages/CalendarPage'
+import Recipes from './pages/Recipes'
 
 // Trang ít dùng tải riêng; tải sẵn ngầm lúc máy rảnh để bấm vào là có ngay
 const pages = {
@@ -59,11 +61,13 @@ function AuthedApp() {
     <BrowserRouter>
       <Layout>
         <Suspense fallback={<Loading />}>
+        <BaristaGuard />
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/ban-hang" element={<Sales />} />
           <Route path="/don" element={<QuickOrders />} />
           <Route path="/lich" element={<CalendarPage />} />
+          <Route path="/cong-thuc" element={<Recipes />} />
           <Route path="/nhap-hang" element={<Purchases />} />
           <Route path="/san-pham" element={<Products />} />
           <Route path="/chi-phi" element={<Expenses />} />
@@ -76,6 +80,14 @@ function AuthedApp() {
       </Layout>
     </BrowserRouter>
   )
+}
+
+// Chế độ pha chế: trang khác (tổng quan, nhập hàng, chi phí…) → về Đơn hàng
+function BaristaGuard() {
+  const barista = useBarista()
+  const { pathname } = useLocation()
+  if (barista && !BARISTA_PATHS.includes(pathname)) return <Navigate to="/ban-hang" replace />
+  return null
 }
 
 function SetupNeeded() {

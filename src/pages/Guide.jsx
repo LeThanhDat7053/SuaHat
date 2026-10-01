@@ -71,7 +71,8 @@ export default function Guide() {
             gọn vào mục “Món khác”. Giữ nguyên cho các ngày sau tới khi đổi.
           </Step>
           <Step n="1" title="Lập đơn thay cho viết giấy" to="/ban-hang">
-            Khách gọi món → bấm vào tên món → chọn số <b>Ly</b> / <b>Chai</b> → <Btn primary>OK</Btn>. Nút <Btn>Lập đơn</Btn> chuyển{' '}
+            Khách gọi món → bấm vào tên món → bấm ô <b>Đá</b> / <b>Nóng</b> của <b>Ly</b> hoặc <b>Chai</b> (bấm nhiều lần = nhiều phần, VD 3
+            ly = bấm Ly đá 2 lần + Ly nóng 1 lần) → <Btn primary>OK</Btn>. Nút <Btn>Lập đơn</Btn> chuyển{' '}
             <span className="good-text">xanh lá</span> = đang lập đơn. Gọi đủ món thì bấm <Btn>Chốt đơn</Btn> → hiện thẻ{' '}
             <b>màu vàng</b> ở “Đơn đang chờ”. Làm được nhiều đơn cùng lúc.
             <br />
@@ -81,6 +82,11 @@ export default function Guide() {
           <Step title="Chỉnh giá Ly / Chai">
             Trong popup chọn Ly / Chai bấm <Btn>Chỉnh giá</Btn>: giá Ly, Chai đắt hơn bao nhiêu (mặc định +3.000đ) và vốn thêm của
             vỏ chai (mặc định 2.500đ). Xem mọi đơn và số Ly / Chai đã bán ở trang <Link to="/don">Đơn bán</Link>.
+          </Step>
+          <Step title="Quầy pha: chế độ pha chế + công thức" to="/cong-thuc">
+            Máy đặt ở quầy pha vào <b>Khác</b> → <b>Chế độ pha chế</b>: chỉ còn <b>Đơn hàng</b> (vẫn lập đơn mới được) và <b>Công thức</b>, ẩn
+            doanh thu / lãi. Trang <b>Công thức</b> hiện nguyên liệu từng mẻ, bấm <b>÷2</b>, <b>÷3</b>… để nấu nửa mẻ, 1/3 mẻ — số tự chia sẵn.
+            Món đánh sao ở “Món hôm nay” được xếp lên đầu.
           </Step>
           <Step n="2" title="Tặng, giảm giá, đổ bỏ">
             Bấm nút <Btn icon={Ellipsis} /> trên món đó để ghi số phần tặng khách, tiền giảm giá, hoặc số phần phải đổ bỏ.
@@ -103,7 +109,7 @@ export default function Guide() {
           <Step n="1" title="Kiểm kê (vài ngày 1 lần)" to="/nguyen-lieu">
             Cân / đếm hàng <b>còn lại</b> → <Btn icon={ClipboardCheck}>Kiểm kê</Btn>. Không cần kiểm hết, chỉ cần các loại hạt đắt tiền.
           </Step>
-          <Step n="2" title="Nhập hàng vừa mua" to="/nhap-hang">
+          <Step n="2" title="Nhập hàng vừa mua (điện thoại: trong mục Khác)" to="/nhap-hang">
             <Btn icon={Plus} primary>Nhập hàng</Btn> → chọn nguyên liệu, gõ số <b>kg / lít</b> và <b>tổng tiền đã trả</b>. Mua nhiều món thì
             bấm “Thêm món khác”.
           </Step>

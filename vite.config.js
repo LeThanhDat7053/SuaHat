@@ -30,7 +30,7 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any', // cho xoay ngang (iPad, điện thoại); 'portrait' làm iPad cài app không xoay được
         background_color: '#faf6f0',
         theme_color: '#7b4a26',
         icons: [

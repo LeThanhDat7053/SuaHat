@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
-import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
+import { BookOpen, CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
+import { setSetting, showError, supabase } from '../lib/supabase'
 import { money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
 import { useLive } from '../lib/live'
-import { CHAI_DEFAULTS, addLines, completeQuickOrder, getChaiDefaults, linesTotal, missingTable, packText } from '../lib/quick'
+import { CHAI_DEFAULTS, addLines, completeQuickOrder, getChaiDefaults, linesTotal, missingTable, packText, variantsText } from '../lib/quick'
+import { FEATURED_KEY, loadFeatured } from '../lib/featured'
+import { useBarista } from '../lib/barista'
 import { DraftPanel, OrderCard, PackPicker, PriceForm, orderLabel } from '../components/QuickOrder'
 import { DateNav, Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 
@@ -46,10 +48,6 @@ async function fetchDay(date) {
 }
 const dayKey = (date) => `sales-day:${date}`
 
-// Món đang bán mấy hôm nay: chọn 1 lần, giữ tới khi đổi, mọi máy dùng chung
-const FEATURED_KEY = 'featured_products'
-const loadFeatured = () => cached(FEATURED_KEY, () => getSetting(FEATURED_KEY, []), 0)
-
 const OTHERS_KEY = 'sales-show-others'
 function readShowOthers() {
   try {
@@ -60,8 +58,13 @@ function readShowOthers() {
 }
 
 export default function Sales() {
+  const barista = useBarista()
   // có dữ liệu từ lần mở trước thì hiện ngay, tải mới ngầm phía sau
   const [date, setDate] = useState(todayStr())
+  // chế độ pha chế không có chọn ngày → luôn xem hôm nay
+  useEffect(() => {
+    if (barista) setDate(todayStr())
+  }, [barista])
   const [cat0] = useState(peekCatalog)
   const [day0] = useState(() => peek(dayKey(todayStr())))
   const [products, setProducts] = useState(() => (cat0 ? activeProducts(cat0) : null))
@@ -354,11 +357,8 @@ export default function Sales() {
     const s = (sold[r.product_id] ||= { ly: 0, chai: 0 })
     s[r.pack === 'chai' ? 'chai' : 'ly'] += r.quantity
   })
-  const inDraft = {}
-  draft?.lines.forEach((l) => {
-    const s = (inDraft[l.product_id] ||= { ly: 0, chai: 0 })
-    s[l.pack] += l.qty
-  })
+  const inDraft = {} // product_id → các dòng trong đơn đang lập
+  draft?.lines.forEach((l) => (inDraft[l.product_id] ||= []).push(l))
 
   const renderCard = (p, isFeatured) => {
     const r = rows[p.id]
@@ -381,13 +381,15 @@ export default function Sales() {
             <span className="muted">{money(p.price)}</span>
             {tags.length > 0 && <span className="sell-tags">{tags.join(' · ')}</span>}
           </button>
-          <button type="button" className="icon-btn sell-more" onClick={() => setExtra(p)} aria-label={`Tặng, giảm giá, hủy ${p.name}`}>
-            <Ellipsis size={18} />
-          </button>
+          {!barista && (
+            <button type="button" className="icon-btn sell-more" onClick={() => setExtra(p)} aria-label={`Tặng, giảm giá, hủy ${p.name}`}>
+              <Ellipsis size={18} />
+            </button>
+          )}
         </div>
         <div className="sell-foot">
           {d ? (
-            <span className="sell-draft">Trong đơn: {packText(d.ly, d.chai)}</span>
+            <span className="sell-draft">Trong đơn: {variantsText(d)}</span>
           ) : (
             <span className="muted small">{s ? `Đã bán ${packText(s.ly, s.chai)}` : 'Chưa bán'}</span>
           )}
@@ -402,7 +404,10 @@ export default function Sales() {
 
   return (
     <>
-      <PageHeader title="Bán hàng" subtitle="Bấm vào món → chọn Ly / Chai. Dữ liệu tự lưu.">
+      <PageHeader
+        title={barista ? 'Đơn hàng' : 'Bán hàng'}
+        subtitle={barista ? 'Chế độ pha chế · bấm món để lập đơn mới' : 'Bấm vào món → chọn Ly / Chai, Đá / Nóng. Dữ liệu tự lưu.'}
+      >
         <span className={`save-status ${status}`}>
           {status === 'saving' ? (
             <>
@@ -416,9 +421,15 @@ export default function Sales() {
             ''
           )}
         </span>
-        <Link to="/don" className="btn btn-ghost">
-          <ClipboardList size={18} /> Xem mọi đơn
-        </Link>
+        {barista ? (
+          <Link to="/cong-thuc" className="btn btn-ghost">
+            <BookOpen size={18} /> Công thức
+          </Link>
+        ) : (
+          <Link to="/don" className="btn btn-ghost">
+            <ClipboardList size={18} /> Xem mọi đơn
+          </Link>
+        )}
         {!needsUpgrade && (
           <button type="button" className={`btn ${draft ? 'btn-drafting' : 'btn-primary'}`} onClick={toggleDraft} aria-pressed={!!draft}>
             <ClipboardPlus size={18} /> {draft ? 'Đang lập đơn' : 'Lập đơn'}
@@ -433,30 +444,33 @@ export default function Sales() {
         </div>
       )}
 
-      <DateNav date={date} onChange={setDate} />
+      {!barista && <DateNav date={date} onChange={setDate} />}
 
-      <div className="stats stats-3">
-        <StatTile
-          label="Đã bán"
-          value={`${totalQty} phần`}
-          note={[chaiQty > 0 && `${totalQty - chaiQty} ly · ${chaiQty} chai`, wasteQty > 0 && `hủy ${wasteQty}`].filter(Boolean).join(' · ') || undefined}
-        />
-        <StatTile label="Doanh thu" value={money(revenue)} />
-        <StatTile
-          label="Lãi gộp"
-          value={money(revenue - cost - wasteCost)}
-          note={`Giá vốn ${moneyShort(cost)}${wasteCost ? ` · hủy ${moneyShort(wasteCost)}` : ''}`}
-          tone="good"
-        />
-      </div>
+      {!barista && (
+        <div className="stats stats-3">
+          <StatTile
+            label="Đã bán"
+            value={`${totalQty} phần`}
+            note={[chaiQty > 0 && `${totalQty - chaiQty} ly · ${chaiQty} chai`, wasteQty > 0 && `hủy ${wasteQty}`].filter(Boolean).join(' · ') || undefined}
+          />
+          <StatTile label="Doanh thu" value={money(revenue)} />
+          <StatTile
+            label="Lãi gộp"
+            value={money(revenue - cost - wasteCost)}
+            note={`Giá vốn ${moneyShort(cost)}${wasteCost ? ` · hủy ${moneyShort(wasteCost)}` : ''}`}
+            tone="good"
+          />
+        </div>
+      )}
 
+      {barista && pending?.length === 0 && <div className="barista-empty">Chưa có đơn nào đang chờ pha.</div>}
       {pending?.length > 0 && (
         <section className="pending">
           <div className="section-head">
             <h2>Đơn đang chờ ({pending.length})</h2>
-            <span className="muted small">{money(pending.reduce((s, o) => s + Number(o.total), 0))}</span>
+            {!barista && <span className="muted small">{money(pending.reduce((s, o) => s + Number(o.total), 0))}</span>}
           </div>
-          <div className="pending-strip">
+          <div className={barista ? 'qorder-grid' : 'pending-strip'}>
             {pending.map((o) => (
               <OrderCard
                 key={o.id}
@@ -509,7 +523,7 @@ export default function Sales() {
         </>
       )}
 
-      {orderRows.length > 0 && (
+      {!barista && orderRows.length > 0 && (
         <div className="card list-card" style={{ marginTop: 16 }}>
           <div className="list-head">
             <span>Từ đơn đặt đã giao</span>
@@ -527,7 +541,7 @@ export default function Sales() {
         </div>
       )}
 
-      {hiddenRows.length > 0 && (
+      {!barista && hiddenRows.length > 0 && (
         <div className="card list-card" style={{ marginTop: 16 }}>
           <div className="list-head">Món đã ẩn / đã xóa (vẫn tính vào doanh thu)</div>
           {hiddenRows.map((r) => (
@@ -557,10 +571,14 @@ export default function Sales() {
           lyCost={lyCost(picker)}
           def={chaiDef}
           onAdd={addToDraft}
-          onEditPrice={() => {
-            setPriceEdit(picker)
-            setPicker(null)
-          }}
+          onEditPrice={
+            barista
+              ? null
+              : () => {
+                  setPriceEdit(picker)
+                  setPicker(null)
+                }
+          }
           onClose={() => setPicker(null)}
         />
       )}
