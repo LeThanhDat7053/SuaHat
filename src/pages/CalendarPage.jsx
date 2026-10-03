@@ -243,7 +243,8 @@ export default function CalendarPage() {
                   </a>
                 )}
                 {o.status === 'pending' && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setStatus(o, 'done')}>
+                  // đơn cũ chưa chọn món: mở form chọn món trước, không thì giao xong mà không có doanh thu
+                  <button className="btn btn-ghost btn-sm" onClick={() => (o.lines?.length ? setStatus(o, 'done') : setEditOrder(o))}>
                     <Check size={16} /> Đã giao
                   </button>
                 )}
@@ -353,10 +354,14 @@ export function OrderForm({ order, onClose, onSaved }) {
   const hasLines = lines.length > 0
   const packs = packTotals([{ lines }])
   const sub = linesTotal(lines)
-  const total = hasLines ? Math.max(0, sub - Number(form.discount || 0)) : Number(form.total || 0)
+  // luôn tính từ món đã chọn; giảm giá cả đơn → doanh thu = tạm tính − giảm (vẫn lưu đủ số ly / chai đã bán)
+  const total = Math.max(0, sub - Number(form.discount || 0))
 
   async function submit(e) {
     e.preventDefault()
+    // bắt buộc chọn món: không có món thì bấm "Đã giao" sẽ không ghi được doanh thu
+    if (!hasLines) return alert('Chọn ít nhất 1 món ở mục "Món đặt" (có số lượng) để app tính tiền và ghi doanh thu khi giao.')
+    if (Number(form.discount || 0) > sub) return alert('Giảm giá lớn hơn tiền món, kiểm tra lại ô "Giảm giá cả đơn".')
     // chỉ gửi cột báo thức khi đã có (đã chạy nang-cap-v4.sql) hoặc có cài
     let alarm = {}
     if ('remind_at' in order || remind.mode !== 'off') {
@@ -379,7 +384,7 @@ export function OrderForm({ order, onClose, onSaved }) {
         price: Number(l.price || 0),
       })),
       items: form.items.trim() || null,
-      discount: hasLines ? Number(form.discount || 0) : 0,
+      discount: Number(form.discount || 0),
       total,
       deposit: Number(form.deposit || 0),
       status: form.status,
@@ -492,15 +497,9 @@ export function OrderForm({ order, onClose, onSaved }) {
         </Field>
 
         <div className="form-row">
-          {hasLines ? (
-            <Field label="Giảm giá cả đơn" hint={`Tạm tính ${money(sub)} → tổng ${money(total)}`}>
-              <MoneyInput value={form.discount} onChange={(v) => set('discount', v)} />
-            </Field>
-          ) : (
-            <Field label="Tổng tiền">
-              <MoneyInput value={form.total} onChange={(v) => set('total', v)} />
-            </Field>
-          )}
+          <Field label="Giảm giá cả đơn" hint={`Tiền món ${money(sub)} → khách trả ${money(total)}`}>
+            <MoneyInput value={form.discount} onChange={(v) => set('discount', v)} />
+          </Field>
           <Field label="Đã cọc">
             <MoneyInput value={form.deposit} onChange={(v) => set('deposit', v)} />
           </Field>

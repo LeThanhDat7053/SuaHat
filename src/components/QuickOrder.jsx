@@ -345,6 +345,7 @@ export function PreOrderCard({ order, busy, onDone, onEdit }) {
         ))}
         {lines.length === 0 && order.items && <div className="qorder-line">{order.items}</div>}
       </div>
+      {lines.length === 0 && <div className="preorder-warn">Đơn chưa chọn món → bấm ✎ chọn món để tính được tiền</div>}
       {lines.length > 0 && order.items && <div className="preorder-note">Món: {order.items}</div>}
       {order.note && <div className="preorder-note">{order.note}</div>}
       <div className="qorder-total">
@@ -353,8 +354,15 @@ export function PreOrderCard({ order, busy, onDone, onEdit }) {
         {order.deposit > 0 && due > 0 && <span className="small preorder-due">còn thu {money(due)}</span>}
       </div>
       <div className="qorder-actions">
-        <button type="button" className="btn btn-primary btn-done" onClick={onDone} disabled={busy} aria-busy={busy || undefined}>
-          {busy ? <span className="spinner" aria-hidden="true" /> : <Check size={18} />} Đã giao
+        <button
+          type="button"
+          className="btn btn-primary btn-done"
+          onClick={lines.length ? onDone : onEdit}
+          disabled={busy}
+          aria-busy={busy || undefined}
+        >
+          {busy ? <span className="spinner" aria-hidden="true" /> : lines.length ? <Check size={18} /> : <Pencil size={18} />}{' '}
+          {lines.length ? 'Đã giao' : 'Chọn món'}
         </button>
         {order.phone && (
           <a className="icon-btn" href={`tel:${order.phone}`} aria-label={`Gọi ${order.phone}`}>

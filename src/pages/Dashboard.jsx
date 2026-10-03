@@ -12,6 +12,8 @@ import { cached, peek } from '../lib/cache'
 import { useLive } from '../lib/live'
 import { addDays, daysBetween, fmtDate, fmtQty, fmtTime, money, moneyShort, monthRange, num, periodRange, todayStr } from '../lib/format'
 import { Loading, PageHeader, StatTile } from '../components/ui'
+import BarChart from '../components/BarChart'
+import Traffic from '../components/Traffic'
 import { STATUS } from './CalendarPage'
 
 const PRESETS = [
@@ -388,6 +390,8 @@ function Report({ data, range }) {
         </section>
       )}
 
+      <Traffic />
+
       <section className="section">
         <div className="section-head">
           <h2>Món bán chạy</h2>
@@ -539,50 +543,3 @@ function exportExcel(range, data) {
   downloadXlsx(`sua-hat_${range.from}_${range.to}.xlsx`, sheets)
 }
 
-function BarChart({ days, values }) {
-  const [hover, setHover] = useState(null)
-  const max = Math.max(...days.map((d) => values[d]), 0)
-  // làm tròn trục lên số "đẹp"
-  const step = max > 0 ? Math.pow(10, Math.floor(Math.log10(max))) : 1
-  const top = max > 0 ? Math.ceil(max / step) * step : 1
-  const ticks = [top, top / 2, 0]
-  const labelEvery = Math.ceil(days.length / 8)
-
-  return (
-    <div className="chart" onPointerLeave={() => setHover(null)}>
-      <div className="chart-y">
-        {ticks.map((t) => (
-          <span key={t}>{moneyShort(t)}</span>
-        ))}
-      </div>
-      <div className="chart-plot">
-        <div className="chart-bars" style={{ gap: days.length > 31 ? 1 : 2 }}>
-          {ticks.map((t) => (
-            <div key={t} className="chart-grid" style={{ bottom: `${(t / top) * 100}%` }} />
-          ))}
-          {days.map((d, i) => (
-            <div
-              key={d}
-              className={`chart-col ${hover === i ? 'hover' : ''}`}
-              onPointerEnter={() => setHover(i)}
-              onClick={() => setHover(i)}
-            >
-              <div className="chart-bar" style={{ height: `${(values[d] / top) * 100}%` }} />
-              {hover === i && (
-                <div className={`chart-tip ${i > days.length / 2 ? 'left' : ''}`}>
-                  <span className="muted">{fmtDate(d)}</span>
-                  <strong>{money(values[d])}</strong>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="chart-x">
-          {days.map((d, i) => (
-            <span key={d}>{i % labelEvery === 0 ? `${Number(d.slice(8))}/${Number(d.slice(5, 7))}` : ''}</span>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}

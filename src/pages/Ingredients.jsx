@@ -632,7 +632,7 @@ function RecipeUnitFix({ ingredient, unit, alt, unitChanged }) {
     if (!confirm(`Hiểu các số cũ là ${alt.unit} và đổi sang ${unit}?\n${list}\n\nChỉ bấm 1 lần.`)) return
     setBusy(true)
     const fix = (items) =>
-      items.map((it) => (Number(it.ingredient_id) === ingredient.id ? { ...it, amount: +(Number(it.amount) * alt.factor).toFixed(4) } : it))
+      items.map((it) => (Number(it.ingredient_id) === ingredient.id ? { ...it, amount: +(Number(it.amount) * alt.factor).toFixed(6) } : it))
     const done = new Set()
     for (const u of uses) {
       const key = `${u.kind}:${u.row.id}`
@@ -649,35 +649,65 @@ function RecipeUnitFix({ ingredient, unit, alt, unitChanged }) {
     load().catch(showError)
   }
 
+  const oldUnit = ingredient.unit
+  const showFix = alt && !converted
   return (
     <div className="unit-fix">
       <span className="field-label">Công thức đang dùng nguyên liệu này</span>
-      {uses.map((u, i) => (
-        <div key={i} className="kv">
-          <span>{u.name}</span>
-          <strong>
-            {num(u.amount)} {ingredient.unit === unit ? unit : ingredient.unit}
-            {alt && ingredient.unit === unit && <span className="muted"> ≈ {num(u.amount / alt.factor, 1)} {alt.unit}</span>}
-          </strong>
-        </div>
-      ))}
-      {unitChanged && (
-        <p className="field-hint danger-text">
-          Đổi đơn vị {ingredient.unit} → {unit} không tự đổi số trong công thức: số trên sẽ bị hiểu theo {unit}. Nhập quy đổi bên trên rồi bấm nút dưới để đổi
-          cho đúng.
+      {showFix && oldUnit === alt.unit && (
+        <p className="field-hint">
+          Bạn đang đổi đơn vị {oldUnit} → {unit}. Bấm nút dưới để công thức <b>giữ nguyên số {alt.unit}</b> như cũ (app tự lưu thành {unit}).
         </p>
       )}
-      {converted && <p className="field-hint good-text">Đã đổi xong. Bấm Lưu để lưu quy đổi của nguyên liệu.</p>}
-      {alt && !converted && (
-        <>
-          <p className="field-hint">
-            Số trên trông sai (VD công thức ghi 380 nhưng ý là 380 {alt.unit}, không phải 380 {unit})? Bấm nút để đổi theo {num(alt.base)} {unit} ={' '}
-            {num(alt.qty)} {alt.unit}.
-          </p>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={convert} disabled={busy}>
-            {busy && <span className="spinner" aria-hidden="true" />} Các số này là {alt.unit} → đổi sang {unit}
-          </button>
-        </>
+      {showFix && oldUnit !== alt.unit && (
+        <p className="field-hint">
+          Nếu lúc gõ công thức bạn nghĩ là <b>{alt.unit}</b> (VD “50” nghĩa là 50 {alt.unit}) thì số đang bị hiểu sai thành {oldUnit}. Bấm nút dưới để sửa hết
+          1 lần, không cần gõ lại.
+        </p>
+      )}
+      <div className="unit-fix-list">
+        {uses.map((u, i) => (
+          <div key={i} className="unit-fix-row">
+            <span className="grow">{u.name}</span>
+            {showFix ? (
+              <span className="unit-fix-change">
+                {oldUnit === alt.unit ? (
+                  'giữ '
+                ) : (
+                  <>
+                    <s>
+                      {num(u.amount)} {oldUnit}
+                    </s>
+                    {' → '}
+                  </>
+                )}
+                <b>
+                  {num(u.amount)} {alt.unit}
+                </b>{' '}
+                <span className="muted">
+                  ({num(u.amount * alt.factor, 1)} {unit})
+                </span>
+              </span>
+            ) : (
+              <strong>
+                {num(u.amount, 2)} {oldUnit === unit ? unit : oldUnit}
+                {alt && oldUnit === unit && <span className="muted"> = {num(u.amount / alt.factor, 1)} {alt.unit}</span>}
+              </strong>
+            )}
+          </div>
+        ))}
+      </div>
+      {unitChanged && !alt && (
+        <p className="field-hint danger-text">
+          Đổi đơn vị {oldUnit} → {unit} không tự đổi số trong công thức. Nhập quy đổi bên trên để app sửa số cho đúng.
+        </p>
+      )}
+      {converted && <p className="field-hint good-text">✓ Đã sửa xong công thức. Bấm Lưu để lưu quy đổi của nguyên liệu.</p>}
+      {showFix && (
+        <button type="button" className="btn btn-primary btn-sm" onClick={convert} disabled={busy}>
+          {busy && <span className="spinner" aria-hidden="true" />}{' '}
+          {oldUnit === alt.unit ? `Giữ nguyên số ${alt.unit} trong công thức` : `Đúng, đây là số ${alt.unit} → sửa hết`}
+        </button>
       )}
     </div>
   )

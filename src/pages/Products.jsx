@@ -431,7 +431,7 @@ function fromGrid(grid, ingredients) {
     .filter((g) => Number(grid[g.id]?.value) > 0)
     .map((g) => {
       const { value, unit } = grid[g.id]
-      return { ingredient_id: g.id, amount: +(Number(value) * factorOf(g, unit)).toFixed(4) }
+      return { ingredient_id: g.id, amount: +(Number(value) * factorOf(g, unit)).toFixed(6) }
     })
 }
 
