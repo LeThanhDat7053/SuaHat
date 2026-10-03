@@ -119,9 +119,12 @@ export async function askNotifyPermission() {
   }
 }
 
+// Báo thức của đơn đặt → mở Bán hàng (đơn đã tự hiện ở đó để làm), ghi chú → mở Lịch đơn
+export const alarmUrl = (item) => (item.table === 'orders' ? '/ban-hang' : `/lich?ngay=${item.date}`)
+
 export async function systemNotify(item) {
   if (!canNotify() || Notification.permission !== 'granted') return
-  const opts = { body: item.body, tag: `${item.table}-${item.id}`, renotify: true, requireInteraction: true, icon: '/pwa-192.png', data: { url: `/lich?ngay=${item.date}` } }
+  const opts = { body: item.body, tag: `${item.table}-${item.id}`, renotify: true, requireInteraction: true, icon: '/pwa-192.png', data: { url: alarmUrl(item) } }
   try {
     const reg = await navigator.serviceWorker?.getRegistration()
     if (reg) return await reg.showNotification(`⏰ ${item.title}`, opts)

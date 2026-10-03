@@ -12,6 +12,7 @@ import {
   fmtRemind,
   loadReminders,
   setReminderOff,
+  alarmUrl,
   snoozeReminder,
   systemNotify,
 } from '../lib/reminders'
@@ -141,10 +142,10 @@ export function ReminderWatcher() {
                 className="btn btn-ghost"
                 onClick={() => {
                   setRinging([])
-                  navigate(`/lich?ngay=${r.date}`)
+                  navigate(alarmUrl(r))
                 }}
               >
-                Xem lịch
+                {r.table === 'orders' ? 'Mở Bán hàng' : 'Xem lịch'}
               </button>
             </div>
           </div>

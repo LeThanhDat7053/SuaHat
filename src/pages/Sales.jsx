@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BookOpen, CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
 import { setSetting, showError, supabase } from '../lib/supabase'
-import { money, moneyShort, todayStr } from '../lib/format'
+import { addDays, money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
@@ -10,7 +10,9 @@ import { useLive } from '../lib/live'
 import { CHAI_DEFAULTS, addLines, completeQuickOrder, getChaiDefaults, linesTotal, missingTable, packText, variantsText } from '../lib/quick'
 import { FEATURED_KEY, loadFeatured } from '../lib/featured'
 import { useBarista } from '../lib/barista'
-import { DraftPanel, OrderCard, PackPicker, PriceForm, orderLabel } from '../components/QuickOrder'
+import { DraftPanel, OrderCard, PackPicker, PreOrderCard, PriceForm, orderLabel } from '../components/QuickOrder'
+import { markOrderDone, showAt } from '../lib/orders'
+import { OrderForm } from './CalendarPage'
 import { DateNav, Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 
 const isEmptyRow = (r) => !(r.quantity > 0) && !(r.gift_qty > 0) && !(Number(r.discount) > 0)
@@ -81,6 +83,8 @@ export default function Sales() {
   const [showOthers, setShowOthers] = useState(readShowOthers)
   const [draft, setDraft] = useState(loadDraft) // null = không ở chế độ lập đơn
   const [pending, setPending] = useState(null) // đơn đã chốt, đang chờ giao
+  const [preorders, setPreorders] = useState([]) // đơn đặt trước (Lịch đơn) còn chờ giao, tới ngày giao
+  const [editPre, setEditPre] = useState(null)
   const [needsUpgrade, setNeedsUpgrade] = useState(false)
   const [picker, setPicker] = useState(null) // món đang chọn Ly / Chai
   const [priceEdit, setPriceEdit] = useState(null)
@@ -111,9 +115,14 @@ export default function Sales() {
   }, [draft])
 
   const loadPending = useCallback(async () => {
-    const { data, error } = await supabase.from('quick_orders').select('*').eq('status', 'pending').order('id')
-    if (missingTable(error)) return setNeedsUpgrade(true)
-    if (!showError(error)) setPending(data)
+    const [q, o] = await Promise.all([
+      supabase.from('quick_orders').select('*').eq('status', 'pending').order('id'),
+      // báo thức có thể đặt từ hôm trước → lấy dư 2 ngày, lọc theo giờ hiện ở dưới
+      supabase.from('orders').select('*').eq('status', 'pending').lte('order_date', addDays(todayStr(), 2)).order('order_date').order('order_time', { nullsFirst: true }),
+    ])
+    if (!showError(o.error)) setPreorders(o.data)
+    if (missingTable(q.error)) return setNeedsUpgrade(true)
+    if (!showError(q.error)) setPending(q.data)
   }, [])
 
   // nhiều máy cùng bán: tự tải lại đơn chờ mỗi 20 giây và khi quay lại app
@@ -306,6 +315,17 @@ export default function Sales() {
     if (order.date === date) loadDay(date)
   }
 
+  // Đơn đặt trước: "Đã giao" ở đây = ở Lịch đơn, doanh thu ghi 1 lần duy nhất
+  async function markPreDone(order) {
+    setBusyOrder(`p${order.id}`)
+    const error = await markOrderDone(order)
+    setBusyOrder(null)
+    showError(error)
+    setPreorders((p) => p.filter((o) => o.id !== order.id))
+    if (order.order_date === date) loadDay(date)
+    loadPending()
+  }
+
   function editOrder(order) {
     if (draft?.lines.length > 0 && !confirm('Đang lập dở 1 đơn khác. Bỏ đơn đó để sửa đơn này?')) return
     setDraft({ lines: order.lines, note: order.note || '', editingId: order.id, date: order.date })
@@ -335,6 +355,11 @@ export default function Sales() {
   }
 
   if (!products) return <Loading />
+
+  // đơn đặt trước: tới giờ báo thức (hoặc 6:30 ngày giao) mới hiện; trong hôm nay mà chưa tới giờ thì ghi nhỏ "sắp tới"
+  const nowMs = Date.now()
+  const shownPre = preorders.filter((o) => showAt(o) <= nowMs)
+  const laterPre = preorders.filter((o) => showAt(o) > nowMs && o.order_date === todayStr())
 
   const activeIds = new Set(products.map((p) => p.id))
   const shopRows = Object.values(rows).filter((r) => activeIds.has(r.product_id))
@@ -463,15 +488,21 @@ export default function Sales() {
         </div>
       )}
 
-      {barista && pending?.length === 0 && <div className="barista-empty">Chưa có đơn nào đang chờ pha.</div>}
-      {pending?.length > 0 && (
+      {barista && pending?.length === 0 && shownPre.length === 0 && <div className="barista-empty">Chưa có đơn nào đang chờ pha.</div>}
+      {(pending?.length > 0 || shownPre.length > 0) && (
         <section className="pending">
           <div className="section-head">
-            <h2>Đơn đang chờ ({pending.length})</h2>
-            {!barista && <span className="muted small">{money(pending.reduce((s, o) => s + Number(o.total), 0))}</span>}
+            <h2>
+              Đơn đang chờ ({(pending?.length || 0) + shownPre.length})
+              {shownPre.length > 0 && <span className="preorder-count"> · {shownPre.length} đặt trước</span>}
+            </h2>
+            {!barista && <span className="muted small">{money((pending || []).reduce((s, o) => s + Number(o.total), 0))}</span>}
           </div>
           <div className={barista ? 'qorder-grid' : 'pending-strip'}>
-            {pending.map((o) => (
+            {shownPre.map((o) => (
+              <PreOrderCard key={`p${o.id}`} order={o} busy={busyOrder === `p${o.id}`} onDone={() => markPreDone(o)} onEdit={() => setEditPre(o)} />
+            ))}
+            {(pending || []).map((o) => (
               <OrderCard
                 key={o.id}
                 order={o}
@@ -484,6 +515,13 @@ export default function Sales() {
             ))}
           </div>
         </section>
+      )}
+
+      {laterPre.length > 0 && (
+        <p className="preorder-later">
+          Đơn đặt sắp tới:{' '}
+          {laterPre.map((o) => `${o.customer} (hiện lúc ${showAt(o).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})`).join(' · ')}
+        </p>
       )}
 
       {products.length === 0 ? (
@@ -597,6 +635,18 @@ export default function Sales() {
             setChaiDef(def)
             setPriceEdit(null)
             setPicker(product)
+          }}
+        />
+      )}
+
+      {editPre && (
+        <OrderForm
+          order={editPre}
+          onClose={() => setEditPre(null)}
+          onSaved={() => {
+            setEditPre(null)
+            loadPending()
+            loadDay(date)
           }}
         />
       )}

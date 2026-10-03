@@ -29,6 +29,24 @@ export function packTotals(orders) {
   return { ...t, text: packText(t.ly, t.chai) }
 }
 
+// Lúc đơn đặt tự hiện ở trang Bán hàng: đúng giờ báo thức nếu có, không thì 6:30 sáng ngày giao
+export const SHOW_HOUR = [6, 30]
+export function showAt(o) {
+  if (o.remind_at) return new Date(o.remind_at)
+  const [y, m, d] = o.order_date.split('-').map(Number)
+  return new Date(y, m - 1, d, ...SHOW_HOUR)
+}
+
+// Bấm "Đã xong / Đã giao" (ở Bán hàng hay Lịch đơn đều dùng hàm này).
+// Chỉ đơn còn "chờ giao" mới được đổi → 2 máy bấm cùng lúc thì chỉ 1 máy ghi doanh thu;
+// thêm khóa (ngày, món, source) ở database nên tiền không bao giờ bị cộng 2 lần.
+export async function markOrderDone(order) {
+  const { data, error } = await supabase.from('orders').update({ status: 'done' }).eq('id', order.id).eq('status', 'pending').select().maybeSingle()
+  if (error) return error
+  if (!data) return null // đã xong ở máy khác
+  return syncOrderSales(data)
+}
+
 export const linesTotal = (lines) => lines.reduce((s, l) => s + Number(l.qty || 0) * Number(l.price || 0), 0)
 
 // Đơn "Đã giao" → ghi các món vào bán hàng của ngày giao. Trạng thái khác → gỡ ra.

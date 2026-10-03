@@ -55,11 +55,13 @@ export async function loadStock(until) {
   const prodMap = toMap(prod.data)
   const recMap = toMap(rec.data)
   const usageCache = {}
+  // "Nhà có / không tính kho": không trừ khi bán
+  const noStock = new Set(ing.data.filter((g) => g.no_stock).map((g) => g.id))
   const use = (row, n) => {
     const product = prodMap[row.product_id]
     if (!product || !n) return
     const usage = (usageCache[product.id] ||= productUsage(product, recMap))
-    for (const [id, amount] of Object.entries(usage)) if (counts(id, row.date)) stock[id] -= amount * n
+    for (const [id, amount] of Object.entries(usage)) if (counts(id, row.date) && !noStock.has(Number(id))) stock[id] -= amount * n
   }
   sal.data.forEach((r) => use(r, r.quantity + (r.gift_qty || 0)))
   wst.data.forEach((r) => use(r, r.quantity))

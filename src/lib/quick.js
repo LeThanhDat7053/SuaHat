@@ -9,11 +9,18 @@ export const PACKS = { ly: 'Ly', chai: 'Chai' }
 // Nhiệt độ: chỉ để pha đúng, không đổi giá. '' = không ghi (đơn cũ)
 export const TEMPS = { da: 'Đá', nong: 'Nóng' }
 
-// "Ly đá", "Chai nóng", "Ly"
-export const variantText = (pack, temp) => [PACKS[pack], TEMPS[temp]?.toLowerCase()].filter(Boolean).join(' ')
+// Độ ngọt: '' = đường bình thường (mặc định, không cần ghi)
+export const SUGARS = { '': 'Bình thường', it: 'Ít đường', khong: 'Không đường' }
+export const sugarText = (sugar) => (sugar ? SUGARS[sugar]?.toLowerCase() : '')
+
+// "Ly đá", "Chai nóng · ít đường", "Ly"
+export const variantText = (pack, temp, sugar) =>
+  [[PACKS[pack], TEMPS[temp]?.toLowerCase()].filter(Boolean).join(' '), sugarText(sugar)].filter(Boolean).join(' · ')
 
 // Chưa chạy file nang-cap-v3.sql → chưa có bảng quick_orders
 export const missingTable = (e) => e && (e.code === 'PGRST205' || e.code === '42P01' || e.code === 'PGRST202')
+// Chưa chạy file nâng cấp có cột mới
+export const missingColumn = (e) => e && (e.code === 'PGRST204' || e.code === '42703')
 
 export const getChaiDefaults = () =>
   cached('chai-defaults', async () => ({ ...CHAI_DEFAULTS, ...((await getSetting('chai', null)) || {}) }), 300000)
@@ -27,7 +34,7 @@ export const chaiExtraCost = (product, def) => Number(has(product.chai_cost) ? p
 export const packPrice = (product, pack, def) => Number(product.price) + (pack === 'chai' ? chaiSurcharge(product, def) : 0)
 export const packCost = (product, pack, lyCost, def) => lyCost + (pack === 'chai' ? chaiExtraCost(product, def) : 0)
 
-export const lineKey = (l) => `${l.product_id}:${l.pack}:${l.temp || ''}`
+export const lineKey = (l) => `${l.product_id}:${l.pack}:${l.temp || ''}:${l.sugar || ''}`
 export const linesTotal = (lines) => lines.reduce((s, l) => s + l.qty * l.price, 0)
 export const linesProfit = (lines) => lines.reduce((s, l) => s + l.qty * (l.price - l.cost), 0)
 export const packQty = (lines, pack) => lines.filter((l) => l.pack === pack).reduce((s, l) => s + l.qty, 0)
@@ -51,16 +58,17 @@ export function packText(ly, chai) {
 
 // Các dòng của 1 món, gọn: "2 Ly đá · 1 Ly nóng · 1 Chai"
 export function variantsText(lines) {
-  const order = (l) => Object.keys(PACKS).indexOf(l.pack) * 3 + ['da', 'nong', ''].indexOf(l.temp || '')
+  const order = (l) =>
+    Object.keys(PACKS).indexOf(l.pack) * 9 + ['da', 'nong', ''].indexOf(l.temp || '') * 3 + Object.keys(SUGARS).indexOf(l.sugar || '')
   return [...lines]
     .filter((l) => l.qty > 0)
     .sort((a, b) => order(a) - order(b))
-    .map((l) => `${l.qty} ${variantText(l.pack, l.temp)}`)
+    .map((l) => `${l.qty} ${variantText(l.pack, l.temp, l.sugar)}`)
     .join(' · ')
 }
 
 // Đơn đã giao → ghi vào bán hàng (1 dòng cho mỗi món + loại + đá/nóng), làm trong 1 giao dịch ở database.
-// Tên món chỉ ghi Ly / Chai để báo cáo không bị tách theo đá / nóng; đá / nóng nằm trong source.
+// Tên món chỉ ghi Ly / Chai để báo cáo không bị tách theo đá / nóng / đường; các lựa chọn này nằm trong source.
 export async function completeQuickOrder(order) {
   const rows = order.lines
     .filter((l) => l.qty > 0)
@@ -68,7 +76,7 @@ export async function completeQuickOrder(order) {
       date: order.date,
       product_id: l.product_id,
       product_name: `${l.name} (${PACKS[l.pack]})`,
-      source: `quick:${order.id}:${l.pack}${l.temp ? `:${l.temp}` : ''}`,
+      source: `quick:${order.id}:${l.pack}${l.temp ? `:${l.temp}` : ''}${l.sugar ? `:s-${l.sugar}` : ''}`,
       pack: l.pack,
       quantity: l.qty,
       unit_price: l.price,

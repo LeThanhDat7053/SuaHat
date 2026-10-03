@@ -7,7 +7,7 @@ import { ALL_DAYS, WEEKDAYS, applyRecurring, scheduleText } from '../lib/recurri
 import { useLive } from '../lib/live'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton, useSubmit } from '../components/ui'
 
-const CATEGORIES = ['Mặt bằng', 'Điện', 'Nước', 'Nước đá', 'Gas', 'Lương nhân viên', 'Bao bì', 'Quảng cáo', 'Sửa chữa', 'Khác']
+const CATEGORIES = ['Mặt bằng', 'Điện', 'Nước', 'Nước đá', 'Gas', 'Lương nhân viên', 'Bao bì', 'Nguyên liệu chợ', 'Quảng cáo', 'Sửa chữa', 'Khác']
 
 export default function Expenses() {
   const [period, setPeriod] = useState({ mode: 'month', date: todayStr() })
@@ -98,6 +98,10 @@ export default function Expenses() {
           </p>
           <p>
             Muốn xem theo ngày / tuần cho sát: tạo khoản <b>Định kỳ mỗi ngày</b> với số đã chia đều (6.000.000đ ÷ 30 = 200.000đ/ngày) thay vì ghi 1 lần.
+          </p>
+          <p>
+            Nguyên liệu đặt <b>Tính 1 lần lúc mua</b> (sữa đặc, đường…, chỉnh ở trang Nguyên liệu): tiền nhập hàng của nó cũng trừ thẳng vào{' '}
+            <b>Lãi</b> ngày mua, giống chi phí khác, nhưng vẫn theo dõi kho và báo sắp hết.
           </p>
           <p className="muted small">
             Lưu ý: bao bì (chai, nắp, ly…) đã có trong công thức món thì không ghi thêm ở đây, kẻo bị trừ 2 lần.

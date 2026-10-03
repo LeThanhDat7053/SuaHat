@@ -1058,3 +1058,82 @@ html { touch-action: manipulation; }
 .explain { margin-bottom: 16px; padding: 0; }
 .explain summary { cursor: pointer; padding: 12px 16px; font-weight: 600; color: var(--ink-2); }
 .explain-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; }
+
+/* ---------- Độ ngọt (popup thêm món) ---------- */
+.sugar-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; }
+.sugar-pick button { border: 0; background: none; min-height: 42px; border-radius: 9px; font-weight: 600; font-size: 0.88rem; color: var(--ink-2); line-height: 1.2; padding: 4px 6px; }
+.sugar-pick button.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.sugar-pick button.sugar-it.active { background: #fff3c4; color: #7a5600; }
+.sugar-pick button.sugar-khong.active { background: #ece6ff; color: #5b3fb5; }
+.vtag-sugar { font-style: normal; font-weight: 700; color: #7a5600; background: #fff3c4; border-radius: 999px; padding: 0 6px; margin-left: 3px; }
+.vtile-other { position: absolute; right: 6px; bottom: 4px; font-size: 0.7rem; color: var(--muted); font-weight: 600; pointer-events: none; }
+.vactions .btn-primary:disabled { opacity: 0.55; }
+
+/* ---------- Tên khách trên thanh đơn đang lập ---------- */
+.draft-name { padding: 8px 8px 0; background: var(--good-soft); }
+.draft-name .draft-note { min-height: 40px; padding: 8px 12px; background: var(--surface); }
+.draft-spacer { height: 150px; }
+
+/* ---------- Đơn đặt trước ở Bán hàng (màu tím, khác đơn tại quầy) ---------- */
+:root { --pre: #6d4bc2; --pre-soft: #f1ecfd; }
+.qorder.preorder { background: var(--pre-soft); border-color: var(--pre); }
+.qorder.preorder .qorder-head { color: #3d2a73; }
+.qorder.preorder .qorder-line { border-top-color: rgba(109, 75, 194, 0.25); }
+.preorder-badge { display: inline-flex; align-items: center; gap: 4px; background: var(--pre); color: #fff; border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.preorder-when { font-size: 0.85rem; color: #3d2a73; margin-top: -4px; }
+.preorder-note { font-size: 0.82rem; color: var(--ink-2); background: rgba(255, 255, 255, 0.6); border-radius: 8px; padding: 4px 8px; }
+.preorder-due { color: var(--pre); font-weight: 700; }
+.qorder.preorder .btn-done { background: var(--pre); }
+.qorder.preorder .btn-done:hover:not(:disabled) { background: #573a9e; }
+.preorder-count { color: var(--pre); font-size: 0.9rem; }
+.preorder-later { font-size: 0.85rem; color: var(--pre); background: var(--pre-soft); border-radius: 10px; padding: 8px 12px; margin: -6px 0 14px; }
+.preorder-hint { color: var(--pre); font-weight: 500; }
+
+/* ---------- Món bán chạy (Tổng quan) ---------- */
+.top-list { list-style: none; margin: 0; padding: 4px 0; }
+.top-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-top: 1px solid var(--line); }
+.top-item:first-child { border-top: 0; }
+.top-rank { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; }
+.top-rank.gold { background: var(--primary); color: #fff; }
+.top-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.top-name { min-width: 0; line-height: 1.35; }
+.top-money { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.top-row > span:last-child { white-space: nowrap; }
+.top-bar { height: 5px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 4px; }
+.top-bar span { display: block; height: 100%; background: var(--primary); border-radius: 999px; opacity: 0.7; }
+
+/* ---------- Nguyên liệu: nhà có + quy đổi đơn vị mua ---------- */
+.no-stock-check { align-items: flex-start; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
+.no-stock-check input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--primary); flex-shrink: 0; }
+.buy-conv { display: grid; grid-template-columns: auto 1fr auto 1.3fr; gap: 8px; align-items: center; }
+.buy-conv > input, .buy-conv .unit-input input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; min-height: 44px; background: var(--surface); }
+@media (orientation: landscape) and (max-height: 500px) { .draft-spacer { height: 120px; } }
+
+/* ---------- Cách tính tiền nguyên liệu + quy đổi ---------- */
+.mode-pick { display: flex; flex-direction: column; gap: 6px; }
+.mode-opt { display: flex; gap: 10px; align-items: flex-start; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+.mode-opt.on { border-color: var(--primary); background: var(--primary-soft); }
+.mode-opt input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--primary); flex-shrink: 0; }
+.buy-conv { grid-template-columns: 1.2fr auto 1fr 1fr; }
+.buy-conv select { width: 100%; padding: 10px 8px; border: 1px solid var(--line); border-radius: 10px; min-height: 44px; background: var(--surface); }
+.rx-alt { font-weight: 500; color: var(--muted); font-size: 0.85rem; }
+
+/* ---------- Tổng quan: phép tính lãi ròng / tiền còn lại ---------- */
+.calc-grid { display: grid; gap: 12px; margin-bottom: 8px; }
+@media (min-width: 900px) { .calc-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+.calc { padding: 14px 16px; display: flex; flex-direction: column; }
+.calc-title { font-weight: 700; margin-bottom: 6px; }
+.calc-row { display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-top: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
+.calc-row:first-of-type { border-top: 0; }
+.calc-row > strong { white-space: nowrap; }
+.calc-sign { width: 14px; flex-shrink: 0; font-weight: 700; color: var(--muted); }
+.calc-row.total { border-top: 2px solid var(--ink-2); margin-top: 2px; font-size: 1.08rem; }
+.calc-row.total .calc-sign { color: var(--ink); }
+.calc-note { font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+.unit-fix { display: flex; flex-direction: column; gap: 6px; border: 1.5px dashed var(--line); border-radius: 12px; padding: 10px 12px; }
+.unit-fix .btn { align-self: flex-start; }
+
+/* Món hôm nay (đánh sao ở Bán hàng): tô vàng giống nhau ở Món bán, Công thức mẻ, Công thức pha chế */
+.product-card.hot { background: #fffaf0; border-color: #f0d9a8; }
+.product-card.hot:hover { border-color: var(--primary); }

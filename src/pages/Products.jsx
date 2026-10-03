@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Copy, CupSoda, FlaskConical, Plus, Trash2 } from 'lucide-react'
+import { Copy, CupSoda, FlaskConical, Plus, Star, Trash2 } from 'lucide-react'
 import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { BIG_UNIT, fmtQty, money, num } from '../lib/format'
-import { DEFAULT_MARGIN, batchCost, productCost, toMap } from '../lib/cost'
+import { DEFAULT_MARGIN, batchCost, productCost, toMap, unitCost } from '../lib/cost'
 import { CHAI_DEFAULTS, getChaiDefaults } from '../lib/quick'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
+import { peek } from '../lib/cache'
+import { FEATURED_KEY, loadFeatured } from '../lib/featured'
 import { useLive } from '../lib/live'
+import { costModeOf, recipeUnits } from '../lib/units'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton } from '../components/ui'
 
 export { DEFAULT_MARGIN }
@@ -23,16 +26,18 @@ export default function Products() {
   const [editing, setEditing] = useState(null)
   const [editRecipe, setEditRecipe] = useState(null)
   const [margin, setMargin] = useState(DEFAULT_MARGIN)
+  const [featured, setFeatured] = useState(() => peek(FEATURED_KEY) || []) // "Món hôm nay" chọn ở trang Bán hàng
 
   function load() {
     loadCatalog(0).then((c) => setData(sortProducts(c)), showError)
+    loadFeatured().then((v) => setFeatured(Array.isArray(v) ? v : []), showError)
   }
   useEffect(() => {
     load()
     getSetting('margin_min', DEFAULT_MARGIN).then((v) => setMargin(Number(v)))
   }, [])
 
-  useLive(['products', 'ingredients', 'recipes'], load)
+  useLive(['products', 'ingredients', 'recipes', 'settings'], load)
 
   const done = () => {
     setEditing(null)
@@ -44,6 +49,12 @@ export default function Products() {
   const { products, ingredients, recipes } = data
   const ingMap = toMap(ingredients)
   const recMap = toMap(recipes)
+  // Món hôm nay (tô vàng + sao) lên đầu, giống trang Bán hàng; mẻ dùng cho món hôm nay cũng vậy
+  const star = new Set(featured)
+  const hotRecipe = new Set(products.filter((p) => star.has(p.id)).map((p) => p.recipe_id))
+  const productList = [...products].sort((a, b) => star.has(b.id) - star.has(a.id))
+  const recipeList = [...recipes].sort((a, b) => hotRecipe.has(b.id) - hotRecipe.has(a.id))
+  const Hot = () => <Star size={15} className="inline-icon featured-star" aria-label="Món hôm nay" />
 
   return (
     <>
@@ -89,15 +100,18 @@ export default function Products() {
             <Empty icon={CupSoda}>Chưa có món nào. Nên tạo “Công thức mẻ” trước, rồi bấm “Thêm món”.</Empty>
           ) : (
             <div className="card-grid">
-              {products.map((p) => {
+              {productList.map((p) => {
                 const cost = productCost(p, ingMap, recMap)
                 const profit = p.price - cost
                 const pct = p.price > 0 ? (profit / p.price) * 100 : 0
                 const low = pct < Number(margin)
                 return (
-                  <button key={p.id} className={`card product-card ${p.active ? '' : 'inactive'}`} onClick={() => setEditing(p)}>
+                  <button key={p.id} className={`card product-card ${p.active ? '' : 'inactive'} ${star.has(p.id) ? 'hot' : ''}`} onClick={() => setEditing(p)}>
                     <div className="product-card-head">
-                      <strong>{p.name}</strong>
+                      <strong>
+                        {star.has(p.id) && <Hot />}
+                        {p.name}
+                      </strong>
                       {!p.active ? <span className="badge">Đang ẩn</span> : low && <span className="badge badge-bad">Lãi mỏng</span>}
                     </div>
                     {recMap[p.recipe_id] && (
@@ -131,13 +145,16 @@ export default function Products() {
         </Empty>
       ) : (
         <div className="card-grid">
-          {recipes.map((r) => {
+          {recipeList.map((r) => {
             const cost = batchCost(r, ingMap)
             const used = products.filter((p) => p.recipe_id === r.id)
             return (
-              <button key={r.id} className="card product-card" onClick={() => setEditRecipe(r)}>
+              <button key={r.id} className={`card product-card ${hotRecipe.has(r.id) ? 'hot' : ''}`} onClick={() => setEditRecipe(r)}>
                 <div className="product-card-head">
-                  <strong>{r.name}</strong>
+                  <strong>
+                    {hotRecipe.has(r.id) && <Hot />}
+                    {r.name}
+                  </strong>
                 </div>
                 <div className="kv">
                   <span>Tiền nguyên liệu 1 mẻ</span>
@@ -151,7 +168,9 @@ export default function Products() {
                   <span>Giá mỗi 100 ml</span>
                   <span>{r.yield_ml > 0 ? money((cost / r.yield_ml) * 100) : '—'}</span>
                 </div>
-                {used.length > 0 && <span className="muted small">Dùng cho: {used.map((p) => p.name).join(', ')}</span>}
+                {used.length > 0 && (
+                  <span className="muted small">Dùng cho: {used.map((p) => (star.has(p.id) ? `★ ${p.name}` : p.name)).join(', ')}</span>
+                )}
               </button>
             )
           })}
@@ -213,7 +232,7 @@ function ItemRows({ rows, onChange, ingredients, placeholder = 'Lượng' }) {
               />
               <span>{ing?.unit || ''}</span>
             </div>
-            <span className="recipe-cost muted">{ing ? money(Number(r.amount || 0) * ing.price_per_unit) : ''}</span>
+            <span className="recipe-cost muted">{ing ? (ing.no_stock ? 'nhà có' : ing.cost_on_buy ? 'lúc mua' : money(Number(r.amount || 0) * unitCost(ing))) : ''}</span>
             <button type="button" className="icon-btn" onClick={() => onChange(rows.filter((_, idx) => idx !== i))} aria-label="Xóa dòng">
               <Trash2 size={18} />
             </button>
@@ -392,13 +411,17 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
 
 // Bảng nhập nhanh: mọi nguyên liệu hiện sẵn, gõ lượng vào món nào dùng, món không dùng để trống.
 // Hạt / sữa gõ được theo kg / lít. Giá trị: { [ingredient_id]: { value, unit } }
+// Nguyên liệu có quy đổi (trà: 44 g = 380 ml) thì mặc định gõ theo đơn vị quy đổi (ml), lưu theo đơn vị gốc (g).
+// Còn lại mặc định g / ml cho dễ cân đong, vẫn đổi sang kg / lít được.
+const factorOf = (g, unit) => recipeUnits(g).find((u) => u.unit === unit)?.factor || 1
+
 function toGrid(items, ingMap) {
   const grid = {}
   items.forEach((r) => {
     const g = ingMap[r.ingredient_id]
     if (!g) return
-    const a = Number(r.amount)
-    grid[g.id] = { value: a, unit: g.unit } // mặc định g / ml cho dễ cân đong, vẫn đổi sang kg / lít được
+    const unit = recipeUnits(g)[0].unit
+    grid[g.id] = { value: +(Number(r.amount) / factorOf(g, unit)).toFixed(2), unit }
   })
   return grid
 }
@@ -408,7 +431,7 @@ function fromGrid(grid, ingredients) {
     .filter((g) => Number(grid[g.id]?.value) > 0)
     .map((g) => {
       const { value, unit } = grid[g.id]
-      return { ingredient_id: g.id, amount: Number(value) * (unit === BIG_UNIT[g.unit] ? 1000 : 1) }
+      return { ingredient_id: g.id, amount: +(Number(value) * factorOf(g, unit)).toFixed(4) }
     })
 }
 
@@ -419,7 +442,7 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
   const list = [...ingredients].sort((a, b) => rank(a) - rank(b))
   const set = (id, patch) => {
     const g = ingMap[id]
-    const cur = grid[id] || { value: '', unit: g.unit }
+    const cur = grid[id] || { value: '', unit: recipeUnits(g)[0].unit }
     onChange({ ...grid, [id]: { ...cur, ...patch } })
   }
   if (ingredients.length === 0) {
@@ -432,14 +455,20 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
   return (
     <div className="count-list">
       {list.map((g) => {
-        const big = BIG_UNIT[g.unit]
-        const cell = grid[g.id] || { value: '', unit: g.unit }
-        const base = Number(cell.value || 0) * (cell.unit === big ? 1000 : 1)
+        const units = recipeUnits(g)
+        const cell = grid[g.id] || { value: '', unit: units[0].unit }
+        const base = Number(cell.value || 0) * factorOf(g, cell.unit)
+        const mode = costModeOf(g)
         return (
           <div key={g.id} className={`count-row ${base > 0 ? 'is-used' : ''}`}>
             <div className="grow">
               <div>{g.name}</div>
-              {base > 0 && <div className="muted small">{money(base * g.price_per_unit)}</div>}
+              {base > 0 && (
+                <div className="muted small">
+                  {cell.unit !== g.unit && `= ${fmtQty(base, g.unit)} · `}
+                  {mode === 'free' ? 'Nhà có · 0đ' : mode === 'buy' ? 'Tính lúc mua' : money(base * unitCost(g))}
+                </div>
+              )}
             </div>
             <div className="qty-input grid-qty">
               <input
@@ -451,10 +480,11 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
                 onChange={(e) => set(g.id, { value: e.target.value })}
                 aria-label={`Lượng ${g.name}`}
               />
-              {big ? (
+              {units.length > 1 ? (
                 <select value={cell.unit} onChange={(e) => set(g.id, { unit: e.target.value })} aria-label="Đơn vị">
-                  <option>{g.unit}</option>
-                  <option>{big}</option>
+                  {units.map((u) => (
+                    <option key={u.unit}>{u.unit}</option>
+                  ))}
                 </select>
               ) : (
                 <span className="muted grid-unit">{g.unit}</span>

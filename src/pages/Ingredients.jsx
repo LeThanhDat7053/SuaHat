@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { ClipboardCheck, Plus, Search, Trash2, Wheat, X } from 'lucide-react'
 import { fetchAll, showError, supabase } from '../lib/supabase'
+import { missingColumn } from '../lib/quick'
+import { unitCost } from '../lib/cost'
+import { COST_MODES, altOf, costModeOf } from '../lib/units'
 import { loadStock, loadStockCached, peekStock } from '../lib/stock'
 import { useLive } from '../lib/live'
-import { BIG_UNIT, fmtDate, fmtQty, money, todayStr, unitMoney, unitPrice } from '../lib/format'
+import { loadCatalog } from '../lib/catalog'
+import { BIG_UNIT, fmtDate, fmtQty, money, num, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 import { ING_CATEGORIES, categoryOf, groupByCategory, guessCategory, plain } from '../lib/categories'
 
 // Đơn vị dùng trong công thức. Hạt/bột dùng g, nước/sữa dùng ml — lúc mua vẫn nhập theo kg / lít được.
-export const UNITS = ['g', 'ml', 'cái', 'hộp', 'gói', 'chai']
+export const UNITS = ['g', 'ml', 'cái', 'trái', 'hộp', 'gói', 'bịch', 'chai']
 
 // Số nhập theo đơn vị lớn (kg / lít) → đơn vị lưu (g / ml)
 const toBase = (v, unit) => Number(v) * (BIG_UNIT[unit] ? 1000 : 1)
@@ -62,7 +66,7 @@ export default function Ingredients() {
       {!data ? <Loading /> : tab === 'ton' ? <StockList data={data} onEdit={setEdit} /> : <CountHistory onChanged={load} />}
 
       {edit && <IngredientForm ingredient={edit} onClose={() => setEdit(null)} onSaved={reload} />}
-      {counting && <StockCountForm ingredients={data.ingredients} onClose={() => setCounting(false)} onSaved={reload} />}
+      {counting && <StockCountForm ingredients={data.ingredients.filter((g) => !g.no_stock)} onClose={() => setCounting(false)} onSaved={reload} />}
     </>
   )
 }
@@ -73,8 +77,8 @@ function StockList({ data, onEdit }) {
   const [filter, setFilter] = useState('all') // 'all' | 'low' | tên nhóm
   if (ingredients.length === 0) return <Empty icon={Wheat}>Chưa có nguyên liệu. Bấm “+ Nguyên liệu” hoặc nhập hàng lần đầu.</Empty>
 
-  const value = ingredients.reduce((s, g) => s + Math.max(0, stock[g.id]) * g.price_per_unit, 0)
-  const isLow = (g) => g.min_stock > 0 && stock[g.id] < g.min_stock
+  const value = ingredients.reduce((s, g) => s + Math.max(0, stock[g.id]) * unitCost(g), 0)
+  const isLow = (g) => !g.no_stock && g.min_stock > 0 && stock[g.id] < g.min_stock
   const low = ingredients.filter(isLow)
   const neverCounted = ingredients.every((g) => !lastCount[g.id])
 
@@ -133,23 +137,27 @@ function StockList({ data, onEdit }) {
             <span>
               {cat} · {list.length}
             </span>
-            <span>{money(list.reduce((s, g) => s + Math.max(0, stock[g.id]) * g.price_per_unit, 0))}</span>
+            <span>{money(list.reduce((s, g) => s + Math.max(0, stock[g.id]) * unitCost(g), 0))}</span>
           </div>
           {list.map((g) => {
             const s = stock[g.id]
-            const isLow = g.min_stock > 0 && s < g.min_stock
+            const isLow = !g.no_stock && g.min_stock > 0 && s < g.min_stock
             return (
               <button key={g.id} className="list-row list-link" onClick={() => onEdit(g)}>
                 <div className="grow">
                   <div>
                     {g.name} {isLow && <span className="badge badge-bad">Sắp hết</span>}
+                    {g.no_stock && <span className="badge badge-neutral">Nhà có</span>}
+                    {g.cost_on_buy && !g.no_stock && <span className="badge badge-neutral">Tính lúc mua</span>}
                   </div>
                   <div className="muted small">
-                    Giá {unitPrice(g.price_per_unit, g.unit)}
+                    {g.no_stock ? 'Không tính tiền, không trừ kho' : `Giá ${unitPrice(g.price_per_unit, g.unit)}`}
+                    {altOf(g) && ` · ${num(altOf(g).base)} ${g.unit} = ${num(altOf(g).qty)} ${altOf(g).unit}`}
                     {lastCount[g.id] ? ` · kiểm kê ${fmtDate(lastCount[g.id].date)}` : ' · chưa kiểm kê'}
                     {g.min_stock > 0 && ` · báo khi dưới ${fmtQty(g.min_stock, g.unit)}`}
                   </div>
                 </div>
+                {!g.no_stock && (
                 <div className="align-right">
                   <div className={`stock-qty ${s < 0 ? 'danger-text' : ''}`}>
                     <span className="muted small">Còn </span>
@@ -158,9 +166,10 @@ function StockList({ data, onEdit }) {
                   {s < 0 ? (
                     <span className="muted small block">Chưa kiểm kê hoặc quên ghi nhập hàng</span>
                   ) : (
-                    <span className="stock-value">Trị giá {money(s * g.price_per_unit)}</span>
+                    <span className="stock-value">{g.cost_on_buy ? 'Đã tính tiền lúc mua' : `Trị giá ${money(s * g.price_per_unit)}`}</span>
                   )}
                 </div>
+                )}
               </button>
             )
           })}
@@ -263,7 +272,7 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
   const shown = ingredients.filter((g) => (!q || plain(g.name).includes(q)) && (cat === 'all' || (cat === 'todo' ? todo.has(g.id) : categoryOf(g) === cat)))
   const allGroups = groupByCategory(ingredients)
   const loss = expected
-    ? filled.reduce((s, g) => s + (expected[g.id] - toBase(values[g.id], g.unit)) * g.price_per_unit, 0)
+    ? filled.reduce((s, g) => s + (expected[g.id] - toBase(values[g.id], g.unit)) * (g.cost_on_buy ? 0 : g.price_per_unit), 0)
     : 0
 
   async function submit(e) {
@@ -275,7 +284,7 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
       ingredient_id: g.id,
       counted: toBase(values[g.id], g.unit),
       expected: expected[g.id],
-      unit_price: g.price_per_unit,
+      unit_price: g.cost_on_buy ? 0 : g.price_per_unit, // tính lúc mua: kiểm kê hụt không trừ tiền lần 2
       note: note.trim() || null,
     }))
     const { error } = await supabase.from('stock_counts').insert(rows)
@@ -412,12 +421,26 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
     price: ingredient.price_per_unit == null ? '' : +(ingredient.price_per_unit * (BIG_UNIT[ingredient.unit] ? 1000 : 1)).toFixed(2),
     min_stock: ingredient.min_stock ? +fromBase(ingredient.min_stock, ingredient.unit).toFixed(3) : '',
     category: ingredient.category || '', // '' = tự xếp theo tên
+    mode: costModeOf(ingredient),
+    alt_base: ingredient.alt_base ?? '',
+    alt_qty: ingredient.alt_qty ?? '',
+    alt_unit: ingredient.alt_unit || '',
   })
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
   const big = BIG_UNIT[form.unit]
   const [busy, onSubmit] = useSubmit(submit)
 
+  // quy đổi: điền 1 phần mà thiếu phần khác thì báo, không lặng lẽ bỏ qua
+  const altFilled = [form.alt_base, form.alt_qty, form.alt_unit].filter((v) => v !== '' && v != null).length
+  const altPreview = altOf({ alt_unit: form.alt_unit !== form.unit ? form.alt_unit : '', alt_base: form.alt_base, alt_qty: form.alt_qty })
+
   async function submit() {
+    if (altFilled > 0 && !altPreview) {
+      return alert(
+        `Quy đổi trong công thức chưa đủ: cần điền cả 3 ô, VD "44" ${form.unit} = "380" "ml".
+Không dùng quy đổi thì xóa trống cả 3 ô.`,
+      )
+    }
     const payload = {
       name: form.name.trim(),
       unit: form.unit,
@@ -426,9 +449,19 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
     }
     // chỉ gửi cột nhóm khi đã có (đã chạy nang-cap-v6.sql) hoặc có chọn
     if ('category' in ingredient || form.category) payload.category = form.category || null
+    // cột của nang-cap-v7.sql: chỉ gửi khi đã có hoặc có dùng
+    if ('no_stock' in ingredient || form.mode === 'free') payload.no_stock = form.mode === 'free'
+    if ('cost_on_buy' in ingredient || form.mode === 'buy') payload.cost_on_buy = form.mode === 'buy'
+    const hasAlt = form.alt_unit && form.alt_unit !== form.unit && Number(form.alt_base) > 0 && Number(form.alt_qty) > 0
+    if ('alt_unit' in ingredient || hasAlt) {
+      payload.alt_unit = hasAlt ? form.alt_unit : null
+      payload.alt_base = hasAlt ? Number(form.alt_base) : null
+      payload.alt_qty = hasAlt ? Number(form.alt_qty) : null
+    }
     const { error } = ingredient.id
       ? await supabase.from('ingredients').update(payload).eq('id', ingredient.id)
       : await supabase.from('ingredients').insert(payload)
+    if (missingColumn(error)) return alert('Cần chạy (lại) file supabase/nang-cap-v7.sql trong Supabase → SQL Editor để dùng cách tính tiền và quy đổi đơn vị mới.')
     if (!showError(error)) onSaved()
   }
 
@@ -467,17 +500,87 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
             ))}
           </select>
         </Field>
-        <Field label={`Báo sắp hết khi còn dưới (${bigOf(form.unit)})`} hint="Để trống nếu không cần báo">
-          <input
-            type="number"
-            step="any"
-            min="0"
-            inputMode="decimal"
-            value={form.min_stock}
-            onChange={(e) => set('min_stock', e.target.value)}
-            placeholder={big ? 'VD: 1' : 'VD: 50'}
+        <div className="field">
+          <span className="field-label">Cách tính tiền</span>
+          <div className="mode-pick">
+            {Object.entries(COST_MODES).map(([k, m]) => (
+              <label key={k} className={`mode-opt ${form.mode === k ? 'on' : ''}`}>
+                <input type="radio" name="cost-mode" checked={form.mode === k} onChange={() => set('mode', k)} />
+                <span>
+                  <b>{m.label}</b>
+                  <span className="muted small block">{m.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <span className="field-label">Quy đổi trong công thức (không bắt buộc)</span>
+          <span className="field-hint">
+            VD trà: 44 g pha ra 380 ml → công thức gõ theo ml, app tự đổi ra g để tính tiền và trừ kho. Không cần thì để trống.
+          </span>
+          <div className="buy-conv">
+            <div className="unit-input">
+              <input
+                type="number"
+                step="any"
+                min="0"
+                inputMode="decimal"
+                value={form.alt_base}
+                onChange={(e) => set('alt_base', e.target.value)}
+                placeholder={`số ${form.unit}`}
+                aria-label={`Số ${form.unit}`}
+              />
+              <span>{form.unit}</span>
+            </div>
+            <span>=</span>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              inputMode="decimal"
+              value={form.alt_qty}
+              onChange={(e) => set('alt_qty', e.target.value)}
+              placeholder="ra được"
+              aria-label="Lượng quy đổi"
+            />
+            <select value={form.alt_unit} onChange={(e) => set('alt_unit', e.target.value)} aria-label="Đơn vị quy đổi">
+              <option value="">chọn…</option>
+              {UNITS.filter((u) => u !== form.unit).map((u) => (
+                <option key={u}>{u}</option>
+              ))}
+            </select>
+          </div>
+          {altPreview ? (
+            <span className="field-hint good-text">
+              ✓ {num(altPreview.base)} {form.unit} = {num(altPreview.qty)} {altPreview.unit} → 1 {altPreview.unit} = {num(altPreview.factor, 3)} {form.unit}
+              {BIG_UNIT[form.unit] && ` · 1 ${BIG_UNIT[form.unit]} ≈ ${num(1000 / altPreview.factor, 0)} ${altPreview.unit}`}
+            </span>
+          ) : (
+            altFilled > 0 && <span className="field-hint danger-text">Điền đủ 3 ô: số {form.unit} = số ra được + chọn đơn vị (VD 44 {form.unit} = 380 ml).</span>
+          )}
+        </div>
+        {ingredient.id && (
+          <RecipeUnitFix
+            ingredient={ingredient}
+            unit={form.unit}
+            alt={altPreview}
+            unitChanged={form.unit !== ingredient.unit}
           />
-        </Field>
+        )}
+        {form.mode !== 'free' && (
+          <Field label={`Báo sắp hết khi còn dưới (${bigOf(form.unit)})`} hint="Để trống nếu không cần báo">
+            <input
+              type="number"
+              step="any"
+              min="0"
+              inputMode="decimal"
+              value={form.min_stock}
+              onChange={(e) => set('min_stock', e.target.value)}
+              placeholder={big ? 'VD: 1' : 'VD: 50'}
+            />
+          </Field>
+        )}
         <div className="form-actions">
           {ingredient.id && (
             <button type="button" className="btn btn-danger-ghost" onClick={remove}>
@@ -491,5 +594,91 @@ export function IngredientForm({ ingredient, onClose, onSaved }) {
         </div>
       </form>
     </Modal>
+  )
+}
+
+// Công thức đang dùng nguyên liệu này + sửa số cũ bị hiểu sai đơn vị.
+// VD: công thức ghi trà "380" lúc nguyên liệu còn để ml, sau đổi sang g → app hiểu thành 380 g.
+// Bấm nút: 380 (ml) × 44/380 → 44 g.
+function RecipeUnitFix({ ingredient, unit, alt, unitChanged }) {
+  const [uses, setUses] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [converted, setConverted] = useState(false) // đổi rồi thì ẩn nút, tránh bấm 2 lần bị chia tiếp
+
+  async function load() {
+    const c = await loadCatalog(0)
+    const id = ingredient.id
+    const out = []
+    c.recipes.forEach((r) =>
+      (r.items || []).forEach((it) => Number(it.ingredient_id) === id && out.push({ kind: 'recipe', row: r, name: `Mẻ ${r.name}`, amount: Number(it.amount) })),
+    )
+    c.products.forEach((p) =>
+      (p.recipe || []).forEach(
+        (it) => Number(it.ingredient_id) === id && out.push({ kind: 'product', row: p, name: `${p.name} (mỗi phần)`, amount: Number(it.amount) }),
+      ),
+    )
+    setUses(out)
+  }
+  useEffect(() => {
+    load().catch(showError)
+  }, [])
+
+  if (!uses || uses.length === 0) return null
+
+  // đổi mọi số của nguyên liệu này trong công thức: × factor
+  async function convert() {
+    if (!alt) return
+    const list = uses.map((u) => `• ${u.name}: ${num(u.amount)} ${alt.unit} → ${num(u.amount * alt.factor, 2)} ${unit}`).join('\n')
+    if (!confirm(`Hiểu các số cũ là ${alt.unit} và đổi sang ${unit}?\n${list}\n\nChỉ bấm 1 lần.`)) return
+    setBusy(true)
+    const fix = (items) =>
+      items.map((it) => (Number(it.ingredient_id) === ingredient.id ? { ...it, amount: +(Number(it.amount) * alt.factor).toFixed(4) } : it))
+    const done = new Set()
+    for (const u of uses) {
+      const key = `${u.kind}:${u.row.id}`
+      if (done.has(key)) continue
+      done.add(key)
+      const { error } =
+        u.kind === 'recipe'
+          ? await supabase.from('recipes').update({ items: fix(u.row.items || []) }).eq('id', u.row.id)
+          : await supabase.from('products').update({ recipe: fix(u.row.recipe || []) }).eq('id', u.row.id)
+      if (showError(error)) break
+    }
+    setBusy(false)
+    setConverted(true)
+    load().catch(showError)
+  }
+
+  return (
+    <div className="unit-fix">
+      <span className="field-label">Công thức đang dùng nguyên liệu này</span>
+      {uses.map((u, i) => (
+        <div key={i} className="kv">
+          <span>{u.name}</span>
+          <strong>
+            {num(u.amount)} {ingredient.unit === unit ? unit : ingredient.unit}
+            {alt && ingredient.unit === unit && <span className="muted"> ≈ {num(u.amount / alt.factor, 1)} {alt.unit}</span>}
+          </strong>
+        </div>
+      ))}
+      {unitChanged && (
+        <p className="field-hint danger-text">
+          Đổi đơn vị {ingredient.unit} → {unit} không tự đổi số trong công thức: số trên sẽ bị hiểu theo {unit}. Nhập quy đổi bên trên rồi bấm nút dưới để đổi
+          cho đúng.
+        </p>
+      )}
+      {converted && <p className="field-hint good-text">Đã đổi xong. Bấm Lưu để lưu quy đổi của nguyên liệu.</p>}
+      {alt && !converted && (
+        <>
+          <p className="field-hint">
+            Số trên trông sai (VD công thức ghi 380 nhưng ý là 380 {alt.unit}, không phải 380 {unit})? Bấm nút để đổi theo {num(alt.base)} {unit} ={' '}
+            {num(alt.qty)} {alt.unit}.
+          </p>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={convert} disabled={busy}>
+            {busy && <span className="spinner" aria-hidden="true" />} Các số này là {alt.unit} → đổi sang {unit}
+          </button>
+        </>
+      )}
+    </div>
   )
 }

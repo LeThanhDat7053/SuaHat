@@ -5,6 +5,7 @@ import { fetchAll, getSetting, showError, supabase } from '../lib/supabase'
 import { loadStockCached } from '../lib/stock'
 import { DEFAULT_MARGIN, productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { orderItemsText } from '../lib/orders'
+import { packText } from '../lib/quick'
 import { downloadXlsx } from '../lib/xlsx'
 import { applyRecurring } from '../lib/recurring'
 import { cached, peek } from '../lib/cache'
@@ -42,13 +43,20 @@ function prevRange({ from, to }) {
 
 const sum = (rows, f) => rows.reduce((s, r) => s + f(r), 0)
 const dm = (s) => `${Number(s.slice(8))}/${Number(s.slice(5, 7))}`
+// Hao hụt kiểm kê: chỉ tính phần THIẾU. Đếm dư (thường do kiểm kê lần đầu, hoặc quên ghi nhập hàng)
+// không được cộng thành tiền lời, kẻo lãi bị ảo.
+const shrinkOf = (counts) => sum(counts, (r) => Math.max(0, r.expected - r.counted) * r.unit_price)
+
+// Tiền mua nguyên liệu "Tính 1 lần lúc mua" (sữa đặc, đường…): trừ thẳng vào lãi kỳ mua
+const directBuy = (purchases) => sum(purchases, (r) => (r.ingredients?.cost_on_buy && !r.ingredients?.no_stock ? Number(r.total) : 0))
+
 const dmy = (s) => `${s.slice(8)}/${s.slice(5, 7)}/${s.slice(0, 4)}`
 
 async function loadRange({ from, to }, full) {
   const q = (table, cols) =>
     fetchAll(() => supabase.from(table).select(cols).gte('date', from).lte('date', to).order('date').order('id'))
   const tables = full
-    ? [q('sales', '*'), q('purchases', '*'), q('expenses', '*'), q('waste', '*'), q('stock_counts', '*, ingredients(name, unit)'), q('day_closings', '*')]
+    ? [q('sales', '*'), q('purchases', '*, ingredients(*)'), q('expenses', '*'), q('waste', '*'), q('stock_counts', '*, ingredients(name, unit)'), q('day_closings', '*')]
     : [q('sales', '*'), q('waste', '*')]
   const res = await Promise.all(tables)
   const error = res.find((r) => r.error)?.error
@@ -94,7 +102,7 @@ async function fetchAlerts() {
   const [st, margin] = await Promise.all([loadStockCached(), getSetting('margin_min', DEFAULT_MARGIN)])
   const ingMap = toMap(st.ingredients)
   const recMap = toMap(st.recipes)
-  const low = st.ingredients.filter((g) => g.min_stock > 0 && st.stock[g.id] < g.min_stock)
+  const low = st.ingredients.filter((g) => !g.no_stock && g.min_stock > 0 && st.stock[g.id] < g.min_stock)
   const thin = st.products
     .filter((p) => p.active && p.price > 0)
     .map((p) => ({ ...p, pct: ((p.price - productCost(p, ingMap, recMap)) / p.price) * 100 }))
@@ -216,6 +224,20 @@ export default function Dashboard() {
 }
 
 // % tăng / giảm so với kỳ trước; `prefix` hiện trước (vd " · "), `suffix` sau
+// 1 dòng trong phép tính: "− Chi phí khác ........ 10.000đ"
+function CalcRow({ label, sub, value, minus, total }) {
+  return (
+    <div className={`calc-row ${total ? 'total' : ''}`}>
+      <span className="calc-sign">{total ? '=' : minus ? '−' : ''}</span>
+      <span className="grow">
+        {label}
+        {sub && <span className="muted small block">{sub}</span>}
+      </span>
+      <strong className={total ? (value >= 0 ? 'good-text' : 'danger-text') : ''}>{money(value)}</strong>
+    </div>
+  )
+}
+
 function Change({ now, before, prefix = '', suffix = null }) {
   if (!before) return null
   const pct = ((now - before) / Math.abs(before)) * 100
@@ -244,26 +266,30 @@ function Report({ data, range }) {
   const old = summarize(prev.sales, prev.waste)
   const bought = sum(purchases, (r) => Number(r.total))
   const other = sum(expenses, (r) => Number(r.amount))
-  const shrink = sum(counts, (r) => (r.expected - r.counted) * r.unit_price)
-  const net = cur.gross - shrink - other
+  const shrink = shrinkOf(counts)
+  const direct = directBuy(purchases)
+  const net = cur.gross - shrink - other - direct
   const cash = cur.revenue - bought - other
   const wasteQty = sum(waste, (r) => r.quantity)
   const made = cur.cups + sum(sales, (r) => r.gift_qty || 0) + wasteQty
 
   const days = daysBetween(range.from, range.to)
   const perCup = cur.cups ? cur.gross / cur.cups : 0
-  const needPerDay = perCup > 0 ? other / perCup / days.length : 0
+  const needPerDay = perCup > 0 ? (other + direct) / perCup / days.length : 0
   const soldPerDay = cur.cups / days.length
 
   const vs = <span className="muted">so với {prev.range.from === prev.range.to ? dm(prev.range.from) : `${dm(prev.range.from)}–${dm(prev.range.to)}`}</span>
 
+  // gộp theo món (Ly + Chai chung 1 dòng), tách số ly / chai để xem
   const byProduct = {}
   const addTo = (rows, key) =>
     rows.forEach((r) => {
-      const p = (byProduct[r.product_name] ||= { name: r.product_name, qty: 0, revenue: 0, profit: 0, prevQty: 0 })
+      const name = r.product_name.replace(/\s\((Ly|Chai)\)$/, '')
+      const p = (byProduct[r.product_id || name] ||= { name, qty: 0, ly: 0, chai: 0, revenue: 0, profit: 0, prevQty: 0 })
       if (key === 'prevQty') p.prevQty += r.quantity
       else {
         p.qty += r.quantity
+        p[r.pack === 'chai' ? 'chai' : 'ly'] += r.quantity
         p.revenue += saleRevenue(r)
         p.profit += saleRevenue(r) - saleCost(r)
       }
@@ -277,7 +303,7 @@ function Report({ data, range }) {
   const perDay = Object.fromEntries(days.map((d) => [d, 0]))
   sales.forEach((r) => (perDay[r.date] = (perDay[r.date] || 0) + saleRevenue(r)))
 
-  const lines = insights({ cur, old, net, top, other, perCup, needPerDay, soldPerDay, wasteQty, made })
+  const lines = insights({ cur, old, net, top, other: other + direct, perCup, needPerDay, soldPerDay, wasteQty, made })
 
   function toggle() {
     setDetail(!detail)
@@ -301,7 +327,7 @@ function Report({ data, range }) {
             </>
           }
         />
-        <StatTile label="Lãi" value={money(net)} note="Đã trừ nguyên liệu và chi phí" tone={net >= 0 ? 'good' : 'bad'} />
+        <StatTile label="Lãi ròng" value={money(net)} note="Đã trừ nguyên liệu và chi phí" tone={net >= 0 ? 'good' : 'bad'} />
         <StatTile label="Tiền còn lại" value={money(cash)} note="Bán − đi chợ − chi phí" tone={cash >= 0 ? 'good' : 'bad'} />
       </div>
 
@@ -316,58 +342,38 @@ function Report({ data, range }) {
       )}
 
       <button type="button" className="btn btn-ghost btn-sm detail-toggle" onClick={toggle}>
-        {detail ? 'Thu gọn ▴' : 'Xem chi tiết các con số ▾'}
+        {detail ? 'Thu gọn ▴' : 'Xem lãi ròng được tính thế nào ▾'}
       </button>
 
       {detail && (
-        <div className="stats">
-          <StatTile
-            label="Doanh thu"
-            value={money(cur.revenue)}
-            note={
-              <>
-                {cur.cups} phần
-                <Change now={cur.revenue} before={old.revenue} prefix=" · " suffix={<> {vs}</>} />
-              </>
-            }
-          />
-          <StatTile
-            label="Lãi gộp"
-            value={money(cur.gross)}
-            note={
-              <>
-                Trừ giá vốn {moneyShort(cur.cogs)} và hàng hủy
-                <Change now={cur.gross} before={old.gross} prefix=" · " />
-              </>
-            }
-            tone={cur.gross >= 0 ? 'good' : 'bad'}
-          />
-          <StatTile
-            label="Hàng hủy"
-            value={money(cur.wasteCost)}
-            note={wasteQty ? `${wasteQty} phần · ${num((wasteQty / made) * 100, 1)}% số làm ra` : 'Không có'}
-            tone={made && wasteQty / made > 0.05 ? 'bad' : undefined}
-          />
-          <StatTile label="Hao hụt kiểm kê" value={money(shrink)} note={counts.length ? `${counts.length} lần kiểm` : 'Chưa kiểm kê trong kỳ'} />
-          <StatTile label="Chi phí khác" value={money(other)} />
-          <StatTile label="Lãi ước tính" value={money(net)} note="Lãi gộp − hao hụt − chi phí khác" tone={net >= 0 ? 'good' : 'bad'} />
-          <StatTile label="Tiền nhập nguyên liệu" value={money(bought)} />
-          <StatTile label="Lãi dòng tiền" value={money(cash)} note="Doanh thu − nhập hàng − chi phí khác" tone={cash >= 0 ? 'good' : 'bad'} />
-          {closings.length > 0 && (
-            <StatTile
-              label="Tiền mặt / chuyển khoản"
-              value={`${moneyShort(sum(closings, (r) => Number(r.cash)))} / ${moneyShort(sum(closings, (r) => Number(r.transfer)))}`}
-              note={`${closings.length} ngày đã chốt · chỉ để đối chiếu, không cộng vào doanh thu`}
-            />
-          )}
-          {other > 0 && perCup > 0 && (
-            <StatTile
-              label="Điểm hòa vốn"
-              value={`${num(Math.ceil(needPerDay))} phần/ngày`}
-              note={`Đang bán ${num(soldPerDay, 1)} phần/ngày · lãi gộp TB ${moneyShort(perCup)}/phần`}
-              tone={soldPerDay >= needPerDay ? 'good' : 'bad'}
-            />
-          )}
+        <div className="calc-grid">
+          <div className="card calc">
+            <div className="calc-title">Lãi ròng tính thế nào</div>
+            <CalcRow label="Doanh thu" sub={<>{cur.cups} phần<Change now={cur.revenue} before={old.revenue} prefix=" · " suffix={<> {vs}</>} /></>} value={cur.revenue} />
+            <CalcRow minus label="Nguyên liệu của số ly đã bán" sub="Theo công thức × giá nguyên liệu" value={cur.cogs} />
+            {cur.wasteCost > 0 && <CalcRow minus label="Hàng hủy" sub={`${wasteQty} phần`} value={cur.wasteCost} />}
+            {shrink > 0 && <CalcRow minus label="Hao hụt kiểm kê" sub="Đếm thực tế thiếu so với sổ" value={shrink} />}
+            {other > 0 && <CalcRow minus label="Chi phí khác" sub="Mặt bằng, điện, nước đá…" value={other} />}
+            {direct > 0 && <CalcRow minus label="Nguyên liệu tính lúc mua" sub="Sữa đặc, đường… nhập trong kỳ" value={direct} />}
+            <CalcRow total label="Lãi ròng" value={net} />
+            <p className="calc-note">
+              Tiền nhập hàng bình thường <b>không</b> trừ thẳng vào lãi: nó trừ dần theo từng ly bán ra (dòng “Nguyên liệu của số ly đã bán”). Riêng
+              nguyên liệu đặt “Tính 1 lần lúc mua” thì trừ ngay khi nhập.
+            </p>
+          </div>
+          <div className="card calc">
+            <div className="calc-title">Tiền còn lại (tiền thực tế)</div>
+            <CalcRow label="Doanh thu" value={cur.revenue} />
+            <CalcRow minus label="Tiền nhập hàng (đi chợ)" value={bought} />
+            {other > 0 && <CalcRow minus label="Chi phí khác" value={other} />}
+            <CalcRow total label="Tiền còn lại" value={cash} />
+            {closings.length > 0 && (
+              <p className="calc-note">
+                Đã chốt {closings.length} ngày: tiền mặt {money(sum(closings, (r) => Number(r.cash)))} · chuyển khoản{' '}
+                {money(sum(closings, (r) => Number(r.transfer)))} (chỉ để đối chiếu).
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -389,30 +395,29 @@ function Report({ data, range }) {
         {top.length === 0 ? (
           <p className="muted">Chưa có dữ liệu bán hàng trong khoảng này.</p>
         ) : (
-          <div className="card table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Món</th>
-                  <th className="num">SL</th>
-                  <th className="num">So kỳ trước</th>
-                  <th className="num">Doanh thu</th>
-                  <th className="num">Lãi gộp</th>
-                </tr>
-              </thead>
-              <tbody>
-                {top.map((p) => (
-                  <tr key={p.name}>
-                    <td>{p.name}</td>
-                    <td className="num">{num(p.qty)}</td>
-                    <td className="num">{p.prevQty ? <Change now={p.qty} before={p.prevQty} /> : <span className="muted">mới</span>}</td>
-                    <td className="num">{money(p.revenue)}</td>
-                    <td className="num">{money(p.profit)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ol className="card top-list">
+            {top.map((p, i) => (
+              <li key={p.name} className="top-item">
+                <span className={`top-rank ${i < 3 ? 'gold' : ''}`}>{i + 1}</span>
+                <div className="top-main">
+                  <div className="top-row">
+                    <strong className="top-name">{p.name}</strong>
+                    <strong className="top-money">{money(p.revenue)}</strong>
+                  </div>
+                  <div className="top-row muted small">
+                    <span>
+                      {packText(p.ly, p.chai)}
+                      {p.prevQty ? <Change now={p.qty} before={p.prevQty} prefix=" · " /> : <span> · mới</span>}
+                    </span>
+                    <span className={p.profit < 0 ? 'danger-text' : 'good-text'}>lãi {moneyShort(p.profit)}</span>
+                  </div>
+                  <div className="top-bar" aria-hidden="true">
+                    <span style={{ width: `${(p.revenue / Math.max(1, top[0].revenue)) * 100}%` }} />
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
         )}
       </section>
     </>
@@ -449,7 +454,8 @@ function exportExcel(range, data) {
   const cur = summarize(sales, waste)
   const bought = sum(purchases, (r) => Number(r.total))
   const other = sum(expenses, (r) => Number(r.amount))
-  const shrink = sum(counts, (r) => (r.expected - r.counted) * r.unit_price)
+  const shrink = shrinkOf(counts)
+  const direct = directBuy(purchases)
   const r0 = Math.round
   const sheets = [
     {
@@ -465,9 +471,10 @@ function exportExcel(range, data) {
         ['Lãi gộp', r0(cur.gross)],
         ['Hao hụt kiểm kê', r0(shrink)],
         ['Chi phí khác', r0(other)],
-        ['Lãi ước tính', r0(cur.gross - shrink - other)],
+        ['Nguyên liệu tính lúc mua', r0(direct)],
+        ['Lãi ròng', r0(cur.gross - shrink - other - direct)],
         ['Tiền nhập nguyên liệu', r0(bought)],
-        ['Lãi dòng tiền', r0(cur.revenue - bought - other)],
+        ['Tiền còn lại', r0(cur.revenue - bought - other)],
       ],
     },
     {

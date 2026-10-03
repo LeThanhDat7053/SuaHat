@@ -1,7 +1,8 @@
 import { Fragment, useState } from 'react'
-import { Check, Flame, Minus, Pencil, Plus, RotateCcw, Snowflake, Trash2, X } from 'lucide-react'
-import { money } from '../lib/format'
-import { PACKS, TEMPS, chaiExtraCost, chaiSurcharge, lineKey, linesProfit, linesTotal, packCost, packPrice, variantText } from '../lib/quick'
+import { CalendarClock, Check, Flame, Minus, Pencil, Phone, Plus, RotateCcw, Snowflake, Trash2, X } from 'lucide-react'
+import { fmtDate, fmtTime, money, todayStr } from '../lib/format'
+import { linePack } from '../lib/orders'
+import { PACKS, SUGARS, TEMPS, chaiExtraCost, chaiSurcharge, lineKey, linesProfit, linesTotal, packCost, packPrice, sugarText, variantText } from '../lib/quick'
 import { setSetting, showError, supabase } from '../lib/supabase'
 import { Field, Modal, MoneyInput, SaveButton, useSubmit } from './ui'
 
@@ -26,68 +27,65 @@ function Stepper({ value, onChange, label }) {
   )
 }
 
-// Lần chọn gần nhất trên máy này (VD: quán bán đá nhiều → mở popup là sẵn 1 Ly đá)
-const LAST_KEY = 'pack-last'
-function readLast() {
-  try {
-    const [pack, temp] = (localStorage.getItem(LAST_KEY) || '').split(':')
-    return pack in PACKS && temp in TEMPS ? `${pack}:${temp}` : 'ly:da'
-  } catch {
-    return 'ly:da'
-  }
-}
-
 const TEMP_ICON = { da: Snowflake, nong: Flame }
 
-// Nhãn "2 Ly đá" có màu: xanh = đá, cam = nóng
-export function VariantTag({ pack, temp, qty }) {
+// Nhãn "2 Ly đá" có màu: xanh = đá, cam = nóng. Ít / không đường ghi thêm phía sau.
+export function VariantTag({ pack, temp, sugar, qty }) {
   const Icon = TEMP_ICON[temp]
   return (
     <span className={`vtag ${temp ? `vtag-${temp}` : ''}`}>
       {qty != null && <b>{qty}</b>}
       {Icon && <Icon size={13} aria-hidden="true" />}
       {variantText(pack, temp)}
+      {sugar && <em className="vtag-sugar">{sugarText(sugar)}</em>}
     </span>
   )
 }
 
-// Popup khi bấm vào món: bấm ô Đá / Nóng của Ly / Chai để thêm (bấm nhiều lần = nhiều phần), rồi OK.
-// Kết hợp tùy ý, VD 3 ly = 2 đá + 1 nóng.
+// Popup khi bấm vào món: chọn độ ngọt, rồi bấm ô Đá / Nóng của Ly / Chai để thêm (bấm nhiều lần = nhiều phần), OK.
+// Bắt đầu từ 0 nên không lo dư 1 ly. Kết hợp tùy ý, VD 3 ly = 2 đá + 1 nóng ít đường.
 export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }) {
-  const [qty, setQty] = useState(() => ({ [readLast()]: 1 }))
+  const [qty, setQty] = useState({}) // 'pack:temp:sugar' → số phần
+  const [sugar, setSugar] = useState('')
   const price = { ly: packPrice(product, 'ly', def), chai: packPrice(product, 'chai', def) }
   const get = (k) => qty[k] || 0
   const bump = (k, d) => setQty((q) => ({ ...q, [k]: Math.max(0, (q[k] || 0) + d) }))
-  const lines = Object.keys(PACKS).flatMap((pack) =>
-    Object.keys(TEMPS).map((temp) => ({
-      product_id: product.id,
-      name: product.name,
-      pack,
-      temp,
-      qty: get(`${pack}:${temp}`),
-      price: price[pack],
-      cost: packCost(product, pack, lyCost, def),
-    })),
-  )
-  const chosen = lines.filter((l) => l.qty > 0)
+  const chosen = Object.entries(qty)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => {
+      const [pack, temp, sg] = k.split(':')
+      return {
+        product_id: product.id,
+        name: product.name,
+        pack,
+        temp,
+        ...(sg ? { sugar: sg } : {}),
+        qty: n,
+        price: price[pack],
+        cost: packCost(product, pack, lyCost, def),
+      }
+    })
   const count = chosen.reduce((s, l) => s + l.qty, 0)
   const total = linesTotal(chosen)
+  // số đã chọn ở độ ngọt khác (hiện nhỏ trên ô để không quên)
+  const otherSugar = (pack, temp) => chosen.filter((l) => l.pack === pack && l.temp === temp && (l.sugar || '') !== sugar).reduce((s, l) => s + l.qty, 0)
 
   function ok(e) {
     e.preventDefault()
     if (count === 0) return onClose()
-    const top = chosen.reduce((a, b) => (b.qty > a.qty ? b : a))
-    try {
-      localStorage.setItem(LAST_KEY, `${top.pack}:${top.temp}`)
-    } catch {
-      /* máy chặn lưu trữ: bỏ qua */
-    }
     onAdd(chosen)
   }
 
   return (
     <Modal title={product.name} onClose={onClose}>
       <form className="form" onSubmit={ok}>
+        <div className="sugar-pick" role="group" aria-label="Độ ngọt">
+          {Object.entries(SUGARS).map(([k, label]) => (
+            <button key={k} type="button" className={`sugar-${k || 'normal'} ${sugar === k ? 'active' : ''}`} aria-pressed={sugar === k} onClick={() => setSugar(k)}>
+              {k ? label : 'Đường bình thường'}
+            </button>
+          ))}
+        </div>
         <div className="vgrid">
           <span />
           {Object.entries(TEMPS).map(([temp, label]) => {
@@ -106,9 +104,10 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
                 {pack === 'chai' && <span className="muted small">+{money(chaiSurcharge(product, def))}</span>}
               </div>
               {Object.entries(TEMPS).map(([temp, tLabel]) => {
-                const k = `${pack}:${temp}`
+                const k = `${pack}:${temp}:${sugar}`
                 const n = get(k)
-                const name = `${label} ${tLabel.toLowerCase()}`
+                const other = otherSugar(pack, temp)
+                const name = variantText(pack, temp, sugar)
                 return (
                   <div key={k} className={`vtile vtemp-${temp} ${n > 0 ? 'on' : ''}`}>
                     <button type="button" className="vtile-add" onClick={() => bump(k, 1)} aria-label={`Thêm 1 ${name}`}>
@@ -116,9 +115,10 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
                     </button>
                     {n > 0 && (
                       <button type="button" className="vtile-minus" onClick={() => bump(k, -1)} aria-label={`Bớt 1 ${name}`}>
-                        <Minus size={16} />
+                        <Minus size={14} />
                       </button>
                     )}
+                    {other > 0 && <span className="vtile-other">+{other} khác</span>}
                   </div>
                 )
               })}
@@ -127,11 +127,11 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
         </div>
         <div className="vsum">
           {count === 0 ? (
-            <span className="muted small">Bấm ô Đá / Nóng để thêm. Bấm nhiều lần = nhiều phần.</span>
+            <span className="muted small">Bấm ô Đá / Nóng để thêm (bắt đầu từ 0). Ít / không đường: chọn ở trên trước rồi bấm ô.</span>
           ) : (
             <>
               {chosen.map((l) => (
-                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} qty={l.qty} />
+                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} sugar={l.sugar} qty={l.qty} />
               ))}
               <button type="button" className="link-btn vsum-clear" onClick={() => setQty({})}>
                 Chọn lại
@@ -148,8 +148,8 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
           <button type="button" className="btn btn-ghost vbtn-cancel" onClick={onClose}>
             Hủy
           </button>
-          <button className="btn btn-primary" autoFocus>
-            OK{count > 0 && ` · ${count} phần · ${money(total)}`}
+          <button className="btn btn-primary" disabled={count === 0}>
+            {count > 0 ? `Thêm · ${count} phần · ${money(total)}` : 'Chưa chọn phần nào'}
           </button>
         </div>
       </form>
@@ -272,7 +272,7 @@ export function OrderCard({ order, busy, editing, showProfit, onDone, onEdit, on
             <span className="qorder-name">{g.name}</span>
             <span className="vtags">
               {g.lines.map((l) => (
-                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} qty={l.qty} />
+                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} sugar={l.sugar} qty={l.qty} />
               ))}
             </span>
           </div>
@@ -312,6 +312,65 @@ export function OrderCard({ order, busy, editing, showProfit, onDone, onEdit, on
   )
 }
 
+// Thẻ đơn ĐẶT TRƯỚC (từ Lịch đơn) hiện ở Bán hàng: màu tím, có giờ giao, SĐT, tiền còn thu.
+// Bấm "Đã giao" ở đây = bấm ở Lịch đơn (cùng 1 đơn, doanh thu chỉ ghi 1 lần).
+export function PreOrderCard({ order, busy, onDone, onEdit }) {
+  const lines = (order.lines || []).filter((l) => l.qty > 0)
+  const due = Number(order.total || 0) - Number(order.deposit || 0)
+  const today = todayStr()
+  const late = order.order_date < today
+  return (
+    <div className="qorder preorder">
+      <div className="qorder-head">
+        <strong className="clamp">{order.customer}</strong>
+        <span className="preorder-badge">
+          <CalendarClock size={13} /> Đặt trước
+        </span>
+      </div>
+      <div className="preorder-when">
+        Giao {order.order_date === today ? 'hôm nay' : fmtDate(order.order_date)}
+        {order.order_time && <b> {fmtTime(order.order_time)}</b>}
+        {late && <span className="danger-text"> · trễ</span>}
+      </div>
+      <div className="qorder-lines">
+        {groupLines(lines.map((l) => ({ ...l, pack: linePack(l) }))).map((g) => (
+          <div key={g.product_id} className="qorder-line">
+            <span className="qorder-name">{g.name}</span>
+            <span className="vtags">
+              {g.lines.map((l, i) => (
+                <VariantTag key={i} pack={l.pack} qty={l.qty} />
+              ))}
+            </span>
+          </div>
+        ))}
+        {lines.length === 0 && order.items && <div className="qorder-line">{order.items}</div>}
+      </div>
+      {lines.length > 0 && order.items && <div className="preorder-note">Món: {order.items}</div>}
+      {order.note && <div className="preorder-note">{order.note}</div>}
+      <div className="qorder-total">
+        <strong>{money(order.total)}</strong>
+        {order.deposit > 0 && <span className="small muted">cọc {money(order.deposit)}</span>}
+        {order.deposit > 0 && due > 0 && <span className="small preorder-due">còn thu {money(due)}</span>}
+      </div>
+      <div className="qorder-actions">
+        <button type="button" className="btn btn-primary btn-done" onClick={onDone} disabled={busy} aria-busy={busy || undefined}>
+          {busy ? <span className="spinner" aria-hidden="true" /> : <Check size={18} />} Đã giao
+        </button>
+        {order.phone && (
+          <a className="icon-btn" href={`tel:${order.phone}`} aria-label={`Gọi ${order.phone}`}>
+            <Phone size={17} />
+          </a>
+        )}
+        {onEdit && (
+          <button type="button" className="icon-btn" onClick={onEdit} disabled={busy} aria-label="Sửa đơn đặt">
+            <Pencil size={17} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // Thanh đơn đang lập (xanh lá) ghim ở cuối màn hình
 export function DraftPanel({ draft, onChange, onSubmit, onCancel, busy }) {
   const [open, setOpen] = useState(false)
@@ -330,21 +389,25 @@ export function DraftPanel({ draft, onChange, onSubmit, onCancel, busy }) {
             lines.map((l, i) => (
               <div key={lineKey(l)} className="draft-line">
                 <span className="grow">
-                  {l.name} <VariantTag pack={l.pack} temp={l.temp} />
+                  {l.name} <VariantTag pack={l.pack} temp={l.temp} sugar={l.sugar} />
                   <span className="muted small"> · {money(l.price)}</span>
                 </span>
-                <Stepper value={l.qty} onChange={(v) => setQty(i, v)} label={`${l.name} ${variantText(l.pack, l.temp)}`} />
+                <Stepper value={l.qty} onChange={(v) => setQty(i, v)} label={`${l.name} ${variantText(l.pack, l.temp, l.sugar)}`} />
               </div>
             ))
           )}
-          <input
-            className="draft-note"
-            value={draft.note}
-            onChange={(e) => onChange({ ...draft, note: e.target.value })}
-            placeholder="Tên khách / số thứ tự (không bắt buộc)"
-          />
         </div>
       )}
+      <div className="draft-name">
+        <input
+          className="draft-note"
+          value={draft.note}
+          onChange={(e) => onChange({ ...draft, note: e.target.value })}
+          placeholder="Tên khách (không bắt buộc)"
+          aria-label="Tên khách"
+          enterKeyHint="done"
+        />
+      </div>
       <div className="draft-bar">
         <button type="button" className="draft-sum" onClick={() => setOpen(!open)} aria-expanded={open}>
           <span className="small">{draft.editingId ? `Sửa đơn #${draft.editingId}` : 'Đang lập đơn'} · {count} phần {open ? '▾' : '▴'}</span>

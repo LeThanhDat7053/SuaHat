@@ -71,8 +71,9 @@ export default function Guide() {
             gọn vào mục “Món khác”. Giữ nguyên cho các ngày sau tới khi đổi.
           </Step>
           <Step n="1" title="Lập đơn thay cho viết giấy" to="/ban-hang">
-            Khách gọi món → bấm vào tên món → bấm ô <b>Đá</b> / <b>Nóng</b> của <b>Ly</b> hoặc <b>Chai</b> (bấm nhiều lần = nhiều phần, VD 3
-            ly = bấm Ly đá 2 lần + Ly nóng 1 lần) → <Btn primary>OK</Btn>. Nút <Btn>Lập đơn</Btn> chuyển{' '}
+            Khách gọi món → bấm vào tên món → (khách dặn ít / không đường thì chọn ở hàng trên cùng trước) → bấm ô <b>Đá</b> / <b>Nóng</b> của{' '}
+            <b>Ly</b> hoặc <b>Chai</b>. Số bắt đầu từ 0, bấm nhiều lần = nhiều phần (VD 3 ly = bấm Ly đá 2 lần + Ly nóng 1 lần) →{' '}
+            <Btn primary>Thêm</Btn>. Tên khách gõ ở ô trên thanh đơn xanh (không bắt buộc). Nút <Btn>Lập đơn</Btn> chuyển{' '}
             <span className="good-text">xanh lá</span> = đang lập đơn. Gọi đủ món thì bấm <Btn>Chốt đơn</Btn> → hiện thẻ{' '}
             <b>màu vàng</b> ở “Đơn đang chờ”. Làm được nhiều đơn cùng lúc.
             <br />
@@ -92,7 +93,8 @@ export default function Guide() {
             Bấm nút <Btn icon={Ellipsis} /> trên món đó để ghi số phần tặng khách, tiền giảm giá, hoặc số phần phải đổ bỏ.
           </Step>
           <Step n="3" title="Giao đơn đặt trước" to="/lich">
-            Vào <b>Lịch đơn</b>, giao xong bấm <Btn>Đã giao</Btn> → tự tính vào doanh thu, <b>không cần</b> bấm lại ở trang Bán hàng.
+            Đơn đặt tự hiện ở <b>Bán hàng</b> (thẻ <b>màu tím</b> “Đặt trước”) đúng giờ báo thức, không đặt báo thức thì lúc <b>6:30</b> sáng ngày
+            giao. Giao xong bấm <Btn>Đã giao</Btn> ở Bán hàng <b>hoặc</b> ở Lịch đơn đều được — 2 nơi là cùng 1 đơn, tiền chỉ cộng 1 lần.
           </Step>
           <Step title="Báo thức cho đơn / ghi chú" to="/lich">
             Trong form đơn đặt hoặc ghi chú, mục <b>Báo thức</b>: chọn <b>Trước giờ giao</b> (15 phút, 1 tiếng…) hoặc <b>Chọn giờ</b>. Đến giờ
@@ -112,6 +114,12 @@ export default function Guide() {
           <Step n="2" title="Nhập hàng vừa mua (điện thoại: trong mục Khác)" to="/nhap-hang">
             <Btn icon={Plus} primary>Nhập hàng</Btn> → chọn nguyên liệu, gõ số <b>kg / lít</b> và <b>tổng tiền đã trả</b>. Mua nhiều món thì
             bấm “Thêm món khác”.
+          </Step>
+          <Step title="Trà, sữa đặc, đồ nhà có" to="/nguyen-lieu">
+            Trà mua theo g nhưng công thức tính theo ml: sửa nguyên liệu → <b>Quy đổi trong công thức</b> “44 g = 380 ml”. Sữa đặc, đường muốn
+            tính tiền 1 lần lúc mua: chọn <b>Tính 1 lần lúc mua</b>. Gạo rang nhà có, trái cây chợ khó cân: chọn <b>Nhà có / không tính</b>{' '}
+            → không tính tiền, không trừ kho; tiền mua chợ (nếu muốn tính vào lãi) ghi ở <Link to="/chi-phi">Chi phí khác</Link> → “Nguyên
+            liệu chợ”.
           </Step>
           <p className="guide-tip">
             💡 Nên <b>kiểm kê trước, nhập hàng sau</b>. Nếu lỡ đếm luôn cả hàng mới mua thì phải ghi Nhập hàng <b>trước</b> khi bấm lưu kiểm

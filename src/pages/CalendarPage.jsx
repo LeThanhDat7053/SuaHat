@@ -4,7 +4,7 @@ import { AlarmClock, BellOff, ChevronLeft, ChevronRight, Phone, Plus, StickyNote
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
-import { deleteOrderSales, linePack, linesTotal, orderItemsText, packTotals, syncOrderSales } from '../lib/orders'
+import { deleteOrderSales, linePack, linesTotal, markOrderDone, orderItemsText, packTotals, showAt, syncOrderSales } from '../lib/orders'
 import { CHAI_DEFAULTS, PACKS, getChaiDefaults, packPrice } from '../lib/quick'
 import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
 import { ReminderField, ReminderList } from '../components/Reminders'
@@ -90,6 +90,10 @@ export default function CalendarPage() {
   }
 
   async function setStatus(order, status) {
+    if (status === 'done') {
+      showError(await markOrderDone(order))
+      return load()
+    }
     const { error } = await supabase.from('orders').update({ status }).eq('id', order.id)
     if (showError(error)) return
     showError(await syncOrderSales({ ...order, status }))
@@ -220,6 +224,11 @@ export default function CalendarPage() {
               {o.lines?.length > 0 && <p className="order-packs">Tổng: {packTotals([o]).text}</p>}
               {o.lines?.length > 0 && o.items && <p className="muted small">{o.items}</p>}
               {o.note && <p className="muted small">Ghi chú: {o.note}</p>}
+              {o.status === 'pending' && (
+                <p className="preorder-hint small">
+                  {showAt(o) <= Date.now() ? 'Đang hiện ở Bán hàng' : `Tự hiện ở Bán hàng lúc ${showAt(o).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}`}
+                </p>
+              )}
               <div className="order-money small">
                 <span>Tổng {money(o.total)}</span>
                 {o.deposit > 0 && <span>Đã cọc {money(o.deposit)}</span>}

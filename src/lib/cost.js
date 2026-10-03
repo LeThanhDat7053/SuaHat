@@ -1,9 +1,13 @@
 export const toMap = (rows) => Object.fromEntries(rows.map((r) => [r.id, r]))
 
+// Giá 1 đơn vị nguyên liệu để tính giá vốn mỗi ly.
+// "Nhà có" và "Tính 1 lần lúc mua" = 0đ (cái sau đã trừ vào lãi ngày mua).
+export const unitCost = (g) => (g && !g.no_stock && !g.cost_on_buy ? Number(g.price_per_unit || 0) : 0)
+
 // Giá tiền nguyên liệu của 1 mẻ
 export function batchCost(recipe, ingMap) {
   const items = Array.isArray(recipe?.items) ? recipe.items : []
-  return items.reduce((s, r) => s + Number(r.amount || 0) * Number(ingMap[r.ingredient_id]?.price_per_unit || 0), 0)
+  return items.reduce((s, r) => s + Number(r.amount || 0) * unitCost(ingMap[r.ingredient_id]), 0)
 }
 
 // Lượng từng nguyên liệu cho 1 phần: { ingredient_id: lượng }
@@ -27,7 +31,7 @@ export function productUsage(product, recipeMap = {}) {
 // Giá vốn 1 phần = nguyên liệu (theo giá bình quân hiện tại) + chi phí phụ
 export function productCost(product, ingMap, recipeMap = {}) {
   const usage = productUsage(product, recipeMap)
-  const ing = Object.entries(usage).reduce((s, [id, amount]) => s + amount * Number(ingMap[id]?.price_per_unit || 0), 0)
+  const ing = Object.entries(usage).reduce((s, [id, amount]) => s + amount * unitCost(ingMap[id]), 0)
   return Number(product.extra_cost || 0) + ing
 }
 

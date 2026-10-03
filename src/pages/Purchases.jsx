@@ -249,7 +249,16 @@ function PurchaseForm({ onClose, onSaved }) {
                   </div>
                 )}
                 <div className="form-row">
-                  <Field label="Số lượng mua" hint={info.big ? `VD: 2,5 ${info.big} thì nhập 2.5` : ''}>
+                  <Field
+                    label="Số lượng mua"
+                    hint={
+                      info.buyUnit !== info.unit && info.quantity > 0
+                        ? `= ${fmtQty(info.quantity, info.unit)}`
+                        : info.big
+                          ? `VD: 2,5 ${info.big} thì nhập 2.5`
+                          : ''
+                    }
+                  >
                     <div className="qty-input">
                       <input
                         type="number"
@@ -275,6 +284,18 @@ function PurchaseForm({ onClose, onSaved }) {
                     <MoneyInput value={line.total} onChange={(v) => setLine(i, 'total', v)} required />
                   </Field>
                 </div>
+                {info.ing?.no_stock && (
+                  <p className="field-hint">
+                    “{info.ing.name}” đang để <b>Nhà có / không tính kho</b> nên tiền mua không vào giá vốn. Muốn tính vào lãi thì ghi ở{' '}
+                    <Link to="/chi-phi">Chi phí khác</Link> thay vì nhập hàng.
+                  </p>
+                )}
+                {info.ing?.cost_on_buy && !info.ing.no_stock && (
+                  <p className="field-hint">
+                    “{info.ing.name}” <b>tính tiền 1 lần lúc mua</b>: số tiền này trừ thẳng vào lãi ngày {date.slice(8)}/{date.slice(5, 7)}, ly bán ra không
+                    tính nữa. Kho vẫn cộng / trừ bình thường.
+                  </p>
+                )}
                 {info.price > 0 && (
                   <div className="summary-box">
                     <div className="kv">
