@@ -71,7 +71,7 @@ export default function Guide() {
             gọn vào mục “Món khác”. Giữ nguyên cho các ngày sau tới khi đổi.
           </Step>
           <Step n="1" title="Lập đơn thay cho viết giấy" to="/ban-hang">
-            Khách gọi món → bấm vào tên món → (khách dặn ít / không đường thì chọn ở hàng trên cùng trước) → bấm ô <b>Đá</b> / <b>Nóng</b> của{' '}
+            Khách gọi món → bấm vào tên món → (khách dặn ít ngọt / không ngọt thì chọn ở hàng trên cùng trước) → bấm ô <b>Đá</b> / <b>Nóng</b> của{' '}
             <b>Ly</b> hoặc <b>Chai</b>. Số bắt đầu từ 0, bấm nhiều lần = nhiều phần (VD 3 ly = bấm Ly đá 2 lần + Ly nóng 1 lần) →{' '}
             <Btn primary>Thêm</Btn>. Tên khách gõ ở ô trên thanh đơn xanh (không bắt buộc). Nút <Btn>Lập đơn</Btn> chuyển{' '}
             <span className="good-text">xanh lá</span> = đang lập đơn. Gọi đủ món thì bấm <Btn>Chốt đơn</Btn> → hiện thẻ{' '}

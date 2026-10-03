@@ -9,11 +9,11 @@ export const PACKS = { ly: 'Ly', chai: 'Chai' }
 // Nhiệt độ: chỉ để pha đúng, không đổi giá. '' = không ghi (đơn cũ)
 export const TEMPS = { da: 'Đá', nong: 'Nóng' }
 
-// Độ ngọt: '' = đường bình thường (mặc định, không cần ghi)
-export const SUGARS = { '': 'Bình thường', it: 'Ít đường', khong: 'Không đường' }
+// Độ ngọt: '' = ngọt bình thường (mặc định, không cần ghi)
+export const SUGARS = { '': 'Ngọt bình thường', it: 'Ít ngọt', khong: 'Không ngọt' }
 export const sugarText = (sugar) => (sugar ? SUGARS[sugar]?.toLowerCase() : '')
 
-// "Ly đá", "Chai nóng · ít đường", "Ly"
+// "Ly đá", "Chai nóng · ít ngọt", "Ly"
 export const variantText = (pack, temp, sugar) =>
   [[PACKS[pack], TEMPS[temp]?.toLowerCase()].filter(Boolean).join(' '), sugarText(sugar)].filter(Boolean).join(' · ')
 
@@ -68,7 +68,7 @@ export function variantsText(lines) {
 }
 
 // Đơn đã giao → ghi vào bán hàng (1 dòng cho mỗi món + loại + đá/nóng), làm trong 1 giao dịch ở database.
-// Tên món chỉ ghi Ly / Chai để báo cáo không bị tách theo đá / nóng / đường; các lựa chọn này nằm trong source.
+// Tên món chỉ ghi Ly / Chai để báo cáo không bị tách theo đá / nóng / độ ngọt; các lựa chọn này nằm trong source.
 export async function completeQuickOrder(order) {
   const rows = order.lines
     .filter((l) => l.qty > 0)

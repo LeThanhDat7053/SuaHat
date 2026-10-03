@@ -29,7 +29,7 @@ function Stepper({ value, onChange, label }) {
 
 const TEMP_ICON = { da: Snowflake, nong: Flame }
 
-// Nhãn "2 Ly đá" có màu: xanh = đá, cam = nóng. Ít / không đường ghi thêm phía sau.
+// Nhãn "2 Ly đá" có màu: xanh = đá, cam = nóng. Ít / không ngọt ghi thêm phía sau.
 export function VariantTag({ pack, temp, sugar, qty }) {
   const Icon = TEMP_ICON[temp]
   return (
@@ -43,7 +43,7 @@ export function VariantTag({ pack, temp, sugar, qty }) {
 }
 
 // Popup khi bấm vào món: chọn độ ngọt, rồi bấm ô Đá / Nóng của Ly / Chai để thêm (bấm nhiều lần = nhiều phần), OK.
-// Bắt đầu từ 0 nên không lo dư 1 ly. Kết hợp tùy ý, VD 3 ly = 2 đá + 1 nóng ít đường.
+// Bắt đầu từ 0 nên không lo dư 1 ly. Kết hợp tùy ý, VD 3 ly = 2 đá + 1 nóng ít ngọt.
 export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }) {
   const [qty, setQty] = useState({}) // 'pack:temp:sugar' → số phần
   const [sugar, setSugar] = useState('')
@@ -82,7 +82,7 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
         <div className="sugar-pick" role="group" aria-label="Độ ngọt">
           {Object.entries(SUGARS).map(([k, label]) => (
             <button key={k} type="button" className={`sugar-${k || 'normal'} ${sugar === k ? 'active' : ''}`} aria-pressed={sugar === k} onClick={() => setSugar(k)}>
-              {k ? label : 'Đường bình thường'}
+              {label}
             </button>
           ))}
         </div>
@@ -127,7 +127,7 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
         </div>
         <div className="vsum">
           {count === 0 ? (
-            <span className="muted small">Bấm ô Đá / Nóng để thêm (bắt đầu từ 0). Ít / không đường: chọn ở trên trước rồi bấm ô.</span>
+            <span className="muted small">Bấm ô Đá / Nóng để thêm (bắt đầu từ 0). Ít / không ngọt: chọn ở trên trước rồi bấm ô.</span>
           ) : (
             <>
               {chosen.map((l) => (

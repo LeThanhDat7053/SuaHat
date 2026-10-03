@@ -487,7 +487,7 @@ export function OrderForm({ order, onClose, onSaved }) {
             )}
           </div>
         </div>
-        <Field label="Ghi chú món" hint="Ít đường, không đá…">
+        <Field label="Ghi chú món" hint="Ít ngọt, không đá…">
           <textarea rows={2} value={form.items} onChange={(e) => set('items', e.target.value)} />
         </Field>
 
