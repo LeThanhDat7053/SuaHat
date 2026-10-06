@@ -10,6 +10,7 @@ import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderO
 import { ReminderField, ReminderList } from '../components/Reminders'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog } from '../lib/catalog'
+import { loadFeatured } from '../lib/featured'
 import { useLive } from '../lib/live'
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
@@ -334,12 +335,17 @@ export function OrderForm({ order, onClose, onSaved }) {
   const [remind, setRemind] = useState(() => reminderForm(order, `${order.order_date || todayStr()}T08:00`))
   const [busy, setBusy] = useState(false)
   const [chaiDef, setChaiDef] = useState(CHAI_DEFAULTS)
+  const [featuredIds, setFeaturedIds] = useState(new Set())
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   useEffect(() => {
-    Promise.all([loadCatalog(), getChaiDefaults()]).then(([c, def]) => {
-      const data = [...c.products].sort((a, b) => b.active - a.active || a.name.localeCompare(b.name, 'vi'))
+    Promise.all([loadCatalog(), getChaiDefaults(), loadFeatured()]).then(([c, def, feat]) => {
+      const featSet = new Set(feat)
+      const data = [...c.products].sort(
+        (a, b) => b.active - a.active || (featSet.has(b.id) ? 1 : 0) - (featSet.has(a.id) ? 1 : 0) || a.name.localeCompare(b.name, 'vi'),
+      )
       setProducts(data)
+      setFeaturedIds(featSet)
       setChaiDef(def)
       if (!order.id && !order.lines?.length && data[0])
         set('lines', [{ product_id: data[0].id, name: data[0].name, pack: 'ly', qty: 1, price: data[0].price }])
@@ -446,7 +452,7 @@ export function OrderForm({ order, onClose, onSaved }) {
                   <option value="">— Chọn món —</option>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {featuredIds.has(p.id) ? '★ ' : ''}{p.name}
                       {p.active ? '' : ' (đang ẩn)'}
                     </option>
                   ))}
