@@ -72,3 +72,7 @@ export async function loadStock(until) {
 // Tồn kho dùng lại trong 2 phút (tự tính lại ngay khi có nhập / bán / kiểm kê trên máy này)
 export const loadStockCached = (until) => cached(`stock:${until || ''}`, () => loadStock(until), 120000)
 export const peekStock = (until) => peek(`stock:${until || ''}`)
+
+// Tiền hao hụt của 1 lần kiểm kê: chỉ tính phần THIẾU so với sổ sách × giá.
+// Dư thì không cộng tiền (app không tự hoàn). Đếm / gõ nhầm → xóa lần kiểm kê đó ("Nhập sai") để gỡ tiền.
+export const countLoss = (r) => Math.max(0, Number(r.expected) - Number(r.counted)) * Number(r.unit_price || 0)

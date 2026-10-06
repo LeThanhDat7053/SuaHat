@@ -1178,3 +1178,4 @@ html { touch-action: manipulation; }
 .unit-fix-row:first-child { border-top: 0; }
 .unit-fix-change { white-space: nowrap; }
 .unit-fix-change s { color: var(--muted); }
+.count-wrong { color: var(--muted); white-space: nowrap; padding: 0 8px; }

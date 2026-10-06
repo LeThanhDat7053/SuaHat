@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleQuestionMark, Download, TriangleAlert } from 'lucide-react'
 import { fetchAll, getSetting, showError, supabase } from '../lib/supabase'
-import { loadStockCached } from '../lib/stock'
+import { countLoss, loadStockCached } from '../lib/stock'
 import { DEFAULT_MARGIN, productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
 import { orderItemsText } from '../lib/orders'
 import { packText } from '../lib/quick'
@@ -45,9 +45,9 @@ function prevRange({ from, to }) {
 
 const sum = (rows, f) => rows.reduce((s, r) => s + f(r), 0)
 const dm = (s) => `${Number(s.slice(8))}/${Number(s.slice(5, 7))}`
-// Hao hụt kiểm kê: chỉ tính phần THIẾU. Đếm dư (thường do kiểm kê lần đầu, hoặc quên ghi nhập hàng)
-// không được cộng thành tiền lời, kẻo lãi bị ảo.
-const shrinkOf = (counts) => sum(counts, (r) => Math.max(0, r.expected - r.counted) * r.unit_price)
+// Hao hụt kiểm kê: chỉ tính phần THIẾU. Dư không cộng tiền (kẻo lãi bị ảo).
+// Kiểm kê nhầm thì xóa lần đó ở Lịch sử kiểm kê ("Nhập sai") để gỡ tiền.
+const shrinkOf = (counts) => sum(counts, countLoss)
 
 // Tiền mua nguyên liệu "Tính 1 lần lúc mua" (sữa đặc, đường…): trừ thẳng vào lãi kỳ mua
 const directBuy = (purchases) => sum(purchases, (r) => (r.ingredients?.cost_on_buy && !r.ingredients?.no_stock ? Number(r.total) : 0))

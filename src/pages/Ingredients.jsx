@@ -4,7 +4,7 @@ import { fetchAll, showError, supabase } from '../lib/supabase'
 import { missingColumn } from '../lib/quick'
 import { unitCost } from '../lib/cost'
 import { COST_MODES, altOf, costModeOf } from '../lib/units'
-import { loadStock, loadStockCached, peekStock } from '../lib/stock'
+import { countLoss, loadStock, loadStockCached, peekStock } from '../lib/stock'
 import { useLive } from '../lib/live'
 import { loadCatalog } from '../lib/catalog'
 import { BIG_UNIT, fmtDate, fmtQty, money, num, todayStr, unitMoney, unitPrice } from '../lib/format'
@@ -193,8 +193,11 @@ function CountHistory({ onChanged }) {
   }, [])
   useLive(['stock_counts'], load)
 
+  // Đếm / gõ nhầm → bạn tự xóa lần kiểm kê đó: chỉ tiền hao hụt của đúng lần này được gỡ, kho tính lại như chưa kiểm
   async function remove(r) {
-    if (!confirm(`Xóa lần kiểm kê ${r.ingredients?.name} ngày ${fmtDate(r.date)}?`)) return
+    const m = countLoss(r)
+    const note = m > 0 ? `\nTiền hao hụt ${money(m)} của lần này sẽ được gỡ khỏi báo cáo.` : ''
+    if (!confirm(`Lần kiểm kê ${r.ingredients?.name} ngày ${fmtDate(r.date)} bị nhập sai?\nXóa lần này → kho tính lại như chưa kiểm.${note}`)) return
     const { error } = await supabase.from('stock_counts').delete().eq('id', r.id)
     if (!showError(error)) {
       load()
@@ -209,14 +212,21 @@ function CountHistory({ onChanged }) {
   rows.forEach((r) => (byDate[r.date] ||= []).push(r))
 
   return Object.entries(byDate).map(([date, list]) => {
-    const loss = list.reduce((s, r) => s + (r.expected - r.counted) * r.unit_price, 0)
+    const loss = list.reduce((s, r) => s + countLoss(r), 0)
+    const lossCount = list.filter((r) => countLoss(r) > 0).length
+    // hụt nhiều tiền nhất lên đầu cho dễ dò
+    const sorted = [...list].sort((a, b) => countLoss(b) - countLoss(a))
     return (
       <div key={date} className="card list-card">
         <div className="list-head">
-          <span>{fmtDate(date)}</span>
-          <span className={loss > 0 ? 'danger-text' : ''}>{loss > 0 ? `Hao hụt ${money(loss)}` : loss < 0 ? `Dư ${money(-loss)}` : 'Khớp'}</span>
+          <span>
+            {fmtDate(date)} · {list.length} nguyên liệu
+          </span>
+          <span className={loss > 0 ? 'danger-text' : ''}>
+            {loss > 0 ? `Hao hụt ${money(loss)} (${lossCount} món hụt)` : 'Không hụt'}
+          </span>
         </div>
-        {list.map((r) => {
+        {sorted.map((r) => {
           const unit = r.ingredients?.unit || ''
           const diff = r.counted - r.expected
           return (
@@ -233,10 +243,10 @@ function CountHistory({ onChanged }) {
                   {diff > 0 ? '+' : ''}
                   {fmtQty(diff, unit)}
                 </strong>
-                <span className="muted small block">{money(diff * r.unit_price)}</span>
+                <span className="muted small block">{diff < 0 ? `−${money(countLoss(r))}` : 'dư · không tính tiền'}</span>
               </div>
-              <button className="icon-btn" onClick={() => remove(r)} aria-label="Xóa">
-                <Trash2 size={16} />
+              <button className="btn btn-ghost btn-sm count-wrong" onClick={() => remove(r)} title="Đếm / gõ nhầm → xóa lần này, gỡ tiền hao hụt của lần này">
+                <Trash2 size={15} /> Nhập sai
               </button>
             </div>
           )
@@ -385,7 +395,7 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
         {filled.length > 0 && (
           <div className="summary-box">
             <div className="kv">
-              <span>{loss >= 0 ? 'Hao hụt' : 'Dư so với sổ sách'}</span>
+              <span>{loss >= 0 ? 'Hao hụt' : 'Dư so với sổ sách (không tính tiền)'}</span>
               <strong className={loss > 0 ? 'danger-text' : ''}>{money(Math.abs(loss))}</strong>
             </div>
           </div>
