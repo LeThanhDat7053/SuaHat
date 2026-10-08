@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { AlarmClock, BellOff, ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Trash2 } from 'lucide-react'
+import { AlarmClock, BellOff, Candy, CandyOff, ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Trash2 } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
 import { deleteOrderSales, linePack, linesTotal, markOrderDone, orderItemsText, packTotals, showAt, syncOrderSales } from '../lib/orders'
-import { CHAI_DEFAULTS, PACKS, getChaiDefaults, packPrice } from '../lib/quick'
+import { CHAI_DEFAULTS, PACKS, SUGARS, TEMPS, getChaiDefaults, packPrice } from '../lib/quick'
 import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
 import { ReminderField, ReminderList } from '../components/Reminders'
+import { PACK_ICON, TEMP_ICON, VariantTag } from '../components/QuickOrder'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog } from '../lib/catalog'
 import { loadFeatured } from '../lib/featured'
 import { useLive } from '../lib/live'
+
+// Ít ngọt / không ngọt có biểu tượng riêng, ngọt vừa thì không cần
+const SUGAR_ICON = { it: Candy, khong: CandyOff }
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 export const STATUS = {
@@ -221,7 +225,18 @@ export default function CalendarPage() {
                   <span className={`badge badge-${STATUS[o.status].cls}`}>{STATUS[o.status].label}</span>
                 </span>
               </div>
-              {orderItemsText(o) && <p className="order-items">{orderItemsText(o, '\n')}</p>}
+              {o.lines?.length > 0 ? (
+                <div className="order-items-tags">
+                  {o.lines.map((l, i) => (
+                    <div key={i} className="order-item-row">
+                      <span>{l.name}</span>
+                      <VariantTag pack={linePack(l)} temp={l.temp} sugar={l.sugar} qty={l.qty} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                orderItemsText(o) && <p className="order-items">{orderItemsText(o, '\n')}</p>
+              )}
               {o.lines?.length > 0 && <p className="order-packs">Tổng: {packTotals([o]).text}</p>}
               {o.lines?.length > 0 && o.items && <p className="muted small">{o.items}</p>}
               {o.note && <p className="muted small">Ghi chú: {o.note}</p>}
@@ -386,6 +401,8 @@ export function OrderForm({ order, onClose, onSaved }) {
         product_id: Number(l.product_id),
         name: l.name,
         pack: linePack(l),
+        ...(l.temp ? { temp: l.temp } : {}),
+        ...(l.sugar ? { sugar: l.sugar } : {}),
         qty: Math.floor(Number(l.qty)),
         price: Number(l.price || 0),
       })),
@@ -458,17 +475,55 @@ export function OrderForm({ order, onClose, onSaved }) {
                   ))}
                 </select>
                 <div className="pack-toggle" role="group" aria-label="Ly hay Chai">
-                  {Object.entries(PACKS).map(([pack, label]) => (
-                    <button
-                      key={pack}
-                      type="button"
-                      className={linePack(l) === pack ? 'active' : ''}
-                      aria-pressed={linePack(l) === pack}
-                      onClick={() => pickLine(i, products.find((x) => x.id === Number(l.product_id)), pack)}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                  {Object.entries(PACKS).map(([pack, label]) => {
+                    const Icon = PACK_ICON[pack]
+                    return (
+                      <button
+                        key={pack}
+                        type="button"
+                        className={linePack(l) === pack ? 'active' : ''}
+                        aria-pressed={linePack(l) === pack}
+                        onClick={() => pickLine(i, products.find((x) => x.id === Number(l.product_id)), pack)}
+                      >
+                        <Icon size={20} aria-hidden="true" /> {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="line-opts">
+                  <div className="pack-toggle temp-toggle" role="group" aria-label="Đá hay nóng">
+                    {Object.entries(TEMPS).map(([temp, label]) => {
+                      const Icon = TEMP_ICON[temp]
+                      return (
+                        <button
+                          key={temp}
+                          type="button"
+                          className={`opt-${temp} ${l.temp === temp ? 'active' : ''}`}
+                          aria-pressed={l.temp === temp}
+                          // bấm lại lần nữa để bỏ chọn
+                          onClick={() => setLine(i, { temp: l.temp === temp ? '' : temp })}
+                        >
+                          <Icon size={15} aria-hidden="true" /> {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="pack-toggle sugar-toggle" role="group" aria-label="Độ ngọt">
+                    {Object.entries(SUGARS).map(([sugar, label]) => {
+                      const Icon = SUGAR_ICON[sugar]
+                      return (
+                        <button
+                          key={sugar}
+                          type="button"
+                          className={`opt-sugar-${sugar || 'normal'} ${(l.sugar || '') === sugar ? 'active' : ''}`}
+                          aria-pressed={(l.sugar || '') === sugar}
+                          onClick={() => setLine(i, { sugar })}
+                        >
+                          {Icon && <Icon size={15} aria-hidden="true" />} {sugar ? label : 'Ngọt vừa'}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
                 <input
                   type="number"
@@ -498,7 +553,7 @@ export function OrderForm({ order, onClose, onSaved }) {
             )}
           </div>
         </div>
-        <Field label="Ghi chú món" hint="Ít ngọt, không đá…">
+        <Field label="Ghi chú món" hint="Thêm trân châu, ít đá…">
           <textarea rows={2} value={form.items} onChange={(e) => set('items', e.target.value)} />
         </Field>
 

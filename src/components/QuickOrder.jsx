@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { CalendarClock, Check, Flame, Minus, Pencil, Phone, Plus, RotateCcw, Snowflake, Trash2, X } from 'lucide-react'
+import { CalendarClock, Check, CupSoda, Flame, Minus, Pencil, Phone, Plus, RotateCcw, Snowflake, Trash2, X } from 'lucide-react'
 import { fmtDate, fmtTime, money, todayStr } from '../lib/format'
 import { linePack } from '../lib/orders'
 import { PACKS, SUGARS, TEMPS, chaiExtraCost, chaiSurcharge, lineKey, linesProfit, linesTotal, packCost, packPrice, sugarText, variantText } from '../lib/quick'
@@ -27,16 +27,30 @@ function Stepper({ value, onChange, label }) {
   )
 }
 
-const TEMP_ICON = { da: Snowflake, nong: Flame }
+export const TEMP_ICON = { da: Snowflake, nong: Flame }
+// Chai tự vẽ (lucide không có chai nước rõ ràng): thân to, nắp tô đặc, có nhãn → nhìn khác hẳn ly có ống hút
+function BottleIcon({ size = 24, ...props }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="8.5" y="1.5" width="7" height="3.5" rx="1" fill="currentColor" />
+      <path d="M10 5v1.5c0 1.2-3.5 2.3-3.5 5V20a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-8.5c0-2.7-3.5-3.8-3.5-5V5" />
+      <path d="M6.5 13h11v5h-11z" fill="currentColor" fillOpacity="0.25" />
+    </svg>
+  )
+}
+export const PACK_ICON = { ly: CupSoda, chai: BottleIcon }
 
 // Nhãn "2 Ly đá" có màu: xanh = đá, cam = nóng. Ít / không ngọt ghi thêm phía sau.
 export function VariantTag({ pack, temp, sugar, qty }) {
   const Icon = TEMP_ICON[temp]
+  const PackIcon = PACK_ICON[pack]
   return (
     <span className={`vtag ${temp ? `vtag-${temp}` : ''}`}>
       {qty != null && <b>{qty}</b>}
-      {Icon && <Icon size={13} aria-hidden="true" />}
-      {variantText(pack, temp)}
+      {PackIcon && <PackIcon size={16} aria-hidden="true" />}
+      {PACKS[pack]}
+      {Icon && <Icon size={13} aria-hidden="true" className="vtag-temp" />}
+      {temp && TEMPS[temp].toLowerCase()}
       {sugar && <em className="vtag-sugar">{sugarText(sugar)}</em>}
     </span>
   )
@@ -99,7 +113,13 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
           {Object.entries(PACKS).map(([pack, label]) => (
             <Fragment key={pack}>
               <div className="vgrid-pack">
-                <strong>{label}</strong>
+                <strong>
+                  {(() => {
+                    const PackIcon = PACK_ICON[pack]
+                    return <PackIcon size={24} aria-hidden="true" />
+                  })()}{' '}
+                  {label}
+                </strong>
                 <span>{money(price[pack])}</span>
                 {pack === 'chai' && <span className="muted small">+{money(chaiSurcharge(product, def))}</span>}
               </div>
@@ -338,7 +358,7 @@ export function PreOrderCard({ order, busy, onDone, onEdit }) {
             <span className="qorder-name">{g.name}</span>
             <span className="vtags">
               {g.lines.map((l, i) => (
-                <VariantTag key={i} pack={l.pack} qty={l.qty} />
+                <VariantTag key={i} pack={l.pack} temp={l.temp} sugar={l.sugar} qty={l.qty} />
               ))}
             </span>
           </div>

@@ -533,7 +533,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .order-line {
   display: grid;
   grid-template-columns: auto 64px 1fr 38px;
-  grid-template-areas: 'prod prod prod del' 'pack qty price price';
+  grid-template-areas: 'prod prod prod del' 'opts opts opts opts' 'pack qty price price';
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -544,8 +544,23 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .order-line > input { grid-area: qty; }
 .order-line > .money-input { grid-area: price; }
 .order-line > .icon-btn { grid-area: del; }
+.order-line > .line-opts { grid-area: opts; display: flex; flex-wrap: wrap; gap: 6px; }
+.line-opts .pack-toggle button { min-height: 34px; min-width: 0; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 4px; }
+/* đá = xanh, nóng = cam, ít ngọt = vàng, không ngọt = tím (giống nhãn ở Bán hàng) */
+.temp-toggle .opt-da { color: var(--ice); }
+.temp-toggle .opt-nong { color: var(--hot); }
+.temp-toggle .opt-da.active { background: var(--ice); color: #fff; }
+.temp-toggle .opt-nong.active { background: var(--hot); color: #fff; }
+.sugar-toggle .opt-sugar-it { color: #7a5600; }
+.sugar-toggle .opt-sugar-khong { color: #5b3fb5; }
+.sugar-toggle .opt-sugar-normal.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.sugar-toggle .opt-sugar-it.active { background: #f2c94c; color: #4a3400; }
+.sugar-toggle .opt-sugar-khong.active { background: #7b5fd6; color: #fff; }
+.order-items-tags { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
+.order-item-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.order-item-row .vtag { padding: 2px 9px; font-size: 0.82rem; }
 .pack-toggle { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
-.pack-toggle button { border: 0; background: none; min-height: 38px; min-width: 48px; padding: 0 8px; border-radius: 8px; font-weight: 600; color: var(--ink-2); }
+.pack-toggle button { border: 0; background: none; min-height: 38px; min-width: 48px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 8px; font-weight: 600; color: var(--ink-2); }
 .pack-toggle button.active { background: var(--primary); color: #fff; }
 .order-packs { font-size: 0.9rem; color: var(--ink-2); font-weight: 500; }
 .day-packs { margin: 2px 0 12px; color: var(--ink-2); }
@@ -559,7 +574,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 }
 .order-line .money-input input { padding-right: 36px; }
 @media (min-width: 480px) {
-  .order-line { grid-template-columns: minmax(0, 1fr) auto 64px 116px 38px; grid-template-areas: 'prod pack qty price del'; }
+  .order-line { grid-template-columns: minmax(0, 1fr) auto 64px 116px 38px; grid-template-areas: 'prod pack qty price del' 'opts opts opts opts opts'; }
   .order-line + .order-line { border-top: 0; padding-top: 0; }
 }
 
@@ -918,7 +933,7 @@ html { touch-action: manipulation; }
 .vgrid-col.vtemp-da { color: var(--ice); }
 .vgrid-col.vtemp-nong { color: var(--hot); }
 .vgrid-pack { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; }
-.vgrid-pack strong { font-size: 1.15rem; }
+.vgrid-pack strong { font-size: 1.15rem; display: inline-flex; align-items: center; gap: 5px; }
 .vtile { position: relative; border-radius: 14px; border: 2px solid var(--line); background: var(--surface); min-height: 76px; display: flex; }
 .vtile.vtemp-da { border-color: #cfe2f3; }
 .vtile.vtemp-nong { border-color: #f5d5c2; }
@@ -960,6 +975,7 @@ html { touch-action: manipulation; }
   vertical-align: 1px;
 }
 .vtag b { font-size: 0.9rem; margin-right: 2px; }
+.vtag .vtag-temp { margin-left: 3px; }
 .vtag-da { background: var(--ice-soft); color: var(--ice); }
 .vtag-nong { background: var(--hot-soft); color: var(--hot); }
 .vtags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }

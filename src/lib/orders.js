@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { productCost, toMap } from './cost'
-import { PACKS, getChaiDefaults, packCost, packText } from './quick'
+import { PACKS, getChaiDefaults, packCost, packText, variantText } from './quick'
 
 // Dòng Ly: 'order:12' (như trước), dòng Chai: 'order:12:chai' — 1 món đặt cả Ly lẫn Chai vẫn ghi được 2 dòng bán
 export const orderSource = (id) => `order:${id}`
@@ -19,7 +19,7 @@ export const linePack = (l) => (l.pack in PACKS ? l.pack : 'ly')
 // Danh sách món của đơn dạng chữ (đơn cũ chỉ có ô chữ `items`)
 export const orderItemsText = (o, sep = ', ') =>
   o.lines?.length
-    ? o.lines.map((l) => `${l.qty} ${PACKS[linePack(l)]} ${l.name}`).join(sep)
+    ? o.lines.map((l) => `${l.qty} ${l.name} (${variantText(linePack(l), l.temp, l.sugar)})`).join(sep)
     : (o.items || '').replace(/\n+/g, sep)
 
 // Tổng số Ly / Chai của các đơn: { ly, chai, text: "5 Ly · 2 Chai" }
