@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
+import { BookOpen, Columns3, CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
 import { setSetting, showError, supabase } from '../lib/supabase'
 import { addDays, money, moneyShort, todayStr } from '../lib/format'
 import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
@@ -59,8 +59,9 @@ function readShowOthers() {
   }
 }
 
-export default function Sales() {
-  const barista = useBarista()
+// split: nằm trong màn hình chia (Pha chế), công thức đã hiện ở bên cạnh
+export default function Sales({ split = false }) {
+  const barista = useBarista() || split
   // có dữ liệu từ lần mở trước thì hiện ngay, tải mới ngầm phía sau
   const [date, setDate] = useState(todayStr())
   // chế độ pha chế không có chọn ngày → luôn xem hôm nay
@@ -431,7 +432,7 @@ export default function Sales() {
     <>
       <PageHeader
         title={barista ? 'Đơn hàng' : 'Bán hàng'}
-        subtitle={barista ? 'Chế độ pha chế · bấm món để lập đơn mới' : 'Bấm vào món → chọn Ly / Chai, Đá / Nóng. Dữ liệu tự lưu.'}
+        subtitle={split ? undefined : barista ? 'Chế độ pha chế · bấm món để lập đơn mới' : 'Bấm vào món → chọn Ly / Chai, Đá / Nóng. Dữ liệu tự lưu.'}
       >
         <span className={`save-status ${status}`}>
           {status === 'saving' ? (
@@ -446,10 +447,15 @@ export default function Sales() {
             ''
           )}
         </span>
-        {barista ? (
-          <Link to="/cong-thuc" className="btn btn-ghost">
-            <BookOpen size={18} /> Công thức
-          </Link>
+        {split ? null : barista ? (
+          <>
+            <Link to="/pha-che" className="btn btn-ghost split-enter">
+              <Columns3 size={18} /> Chia màn hình
+            </Link>
+            <Link to="/cong-thuc" className="btn btn-ghost">
+              <BookOpen size={18} /> Công thức
+            </Link>
+          </>
         ) : (
           <Link to="/don" className="btn btn-ghost">
             <ClipboardList size={18} /> Xem mọi đơn

@@ -87,7 +87,8 @@ export default function Guide() {
           <Step title="Quầy pha: chế độ pha chế + công thức" to="/cong-thuc">
             Máy đặt ở quầy pha vào <b>Khác</b> → <b>Chế độ pha chế</b>: chỉ còn <b>Đơn hàng</b> (vẫn lập đơn mới được) và <b>Công thức</b>, ẩn
             doanh thu / lãi. Trang <b>Công thức</b> hiện nguyên liệu từng mẻ, bấm <b>÷2</b>, <b>÷3</b>… để nấu nửa mẻ, 1/3 mẻ — số tự chia sẵn.
-            Món đánh sao ở “Món hôm nay” được xếp lên đầu.
+            Món đánh sao ở “Món hôm nay” được xếp lên đầu. Máy tính bảng xoay ngang / máy tính bấm <b>Chia màn hình</b> ở trang Đơn hàng:
+            2 khung công thức (bấm tên để đổi món, ‹ › để lật nhanh) + 1 khung đơn hàng, vừa pha vừa thấy đơn mới.
           </Step>
           <Step n="2" title="Tặng, giảm giá, đổ bỏ">
             Bấm nút <Btn icon={Ellipsis} /> trên món đó để ghi số phần tặng khách, tiền giảm giá, hoặc số phần phải đổ bỏ.

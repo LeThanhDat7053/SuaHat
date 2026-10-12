@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { invalidateCache } from './cache'
+import { isNetworkError, markDown, netFetch } from './net'
+import { toast } from './toast'
 
 // Publishable key được thiết kế để công khai trên web (dữ liệu được bảo vệ bằng RLS + đăng nhập),
 // nên để sẵn giá trị mặc định: Netlify build được luôn mà không cần khai báo biến môi trường.
@@ -10,7 +12,7 @@ export const isConfigured = Boolean(url && key)
 
 // Có lệnh ghi dữ liệu (thêm / sửa / xóa / gọi hàm) → làm cũ bộ nhớ tạm để lần đọc sau lấy số mới
 async function trackedFetch(input, init) {
-  const res = await fetch(input, init)
+  const res = await netFetch(input, init)
   const method = (init?.method || 'GET').toUpperCase()
   if (method !== 'GET' && method !== 'HEAD' && String(input?.url || input).includes('/rest/')) invalidateCache()
   return res
@@ -47,9 +49,17 @@ export async function setSetting(key, value) {
   return !showError(error)
 }
 
+// Báo lỗi bằng thông báo nhỏ tự tắt. Rớt mạng thì báo dễ hiểu, không hiện chữ kỹ thuật kiểu
+// "TypeError: Failed to fetch"; trang tự tải lại ngầm nhiều lần nên 30 giây chỉ báo 1 lần
+// (thanh "Mất mạng" ở trên vẫn hiện suốt tới khi có mạng lại).
+let lastNetToast = 0
 export function showError(error) {
   if (!error) return false
   console.error(error)
-  alert('Có lỗi: ' + (error.message || error))
+  if (isNetworkError(error)) {
+    if (Date.now() - lastNetToast > 30000) toast('Mạng đang chập chờn nên chưa làm được — có mạng lại thì thử lại nhé.', 'warn')
+    lastNetToast = Date.now()
+    markDown(true)
+  } else toast('Có lỗi: ' + (error.message || error), 'error')
   return true
 }

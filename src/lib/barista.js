@@ -33,4 +33,4 @@ const subscribe = (fn) => {
 export const useBarista = () => useSyncExternalStore(subscribe, () => on)
 
 // Trang được mở trong chế độ pha chế
-export const BARISTA_PATHS = ['/ban-hang', '/cong-thuc', '/khac', '/huong-dan']
+export const BARISTA_PATHS = ['/ban-hang', '/cong-thuc', '/pha-che', '/khac', '/huong-dan']

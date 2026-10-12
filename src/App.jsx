@@ -20,6 +20,7 @@ const pages = {
   Ingredients: () => import('./pages/Ingredients'),
   Guide: () => import('./pages/Guide'),
   QuickOrders: () => import('./pages/QuickOrders'),
+  BaristaSplit: () => import('./pages/BaristaSplit'),
 }
 const Purchases = lazy(pages.Purchases)
 const Products = lazy(pages.Products)
@@ -28,6 +29,7 @@ const More = lazy(pages.More)
 const Ingredients = lazy(pages.Ingredients)
 const Guide = lazy(pages.Guide)
 const QuickOrders = lazy(pages.QuickOrders)
+const BaristaSplit = lazy(pages.BaristaSplit)
 
 function prefetchPages() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500))
@@ -68,6 +70,7 @@ function AuthedApp() {
           <Route path="/don" element={<QuickOrders />} />
           <Route path="/lich" element={<CalendarPage />} />
           <Route path="/cong-thuc" element={<Recipes />} />
+          <Route path="/pha-che" element={<BaristaSplit />} />
           <Route path="/nhap-hang" element={<Purchases />} />
           <Route path="/san-pham" element={<Products />} />
           <Route path="/chi-phi" element={<Expenses />} />

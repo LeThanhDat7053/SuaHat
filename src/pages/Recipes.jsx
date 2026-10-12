@@ -32,12 +32,11 @@ const nfc = (t) => String(t || '').normalize('NFC')
 
 const items = (list) => (Array.isArray(list) ? list : []).filter((r) => Number(r.amount) > 0)
 
-export default function Recipes() {
-  const barista = useBarista()
+// Dữ liệu công thức dùng chung cho trang Công thức và màn hình chia đôi (Pha chế)
+export function useRecipes() {
   const [data, setData] = useState(peekCatalog)
   const [featured, setFeatured] = useState(() => peek(FEATURED_KEY) || [])
   const [divs, setDivs] = useState(readDivs)
-  const [query, setQuery] = useState('')
 
   function load() {
     loadCatalog(0).then(setData, showError)
@@ -56,7 +55,7 @@ export default function Recipes() {
     }
   }
 
-  if (!data) return <Loading />
+  if (!data) return null
   const ingMap = toMap(data.ingredients)
   const products = data.products.filter((p) => p.active)
   const star = new Set(featured)
@@ -66,32 +65,114 @@ export default function Recipes() {
   const cards = [
     ...data.recipes.map((r) => {
       const used = products.filter((p) => p.recipe_id === r.id)
-      return { key: `r${r.id}`, name: r.name, names: [r.name, ...used.map((p) => p.name)], recipe: r, used, hot: used.some((p) => star.has(p.id)) }
+      return { key: `r${r.id}`, name: nfc(r.name), names: [r.name, ...used.map((p) => p.name)], recipe: r, used, hot: used.some((p) => star.has(p.id)) }
     }),
     ...products
       .filter((p) => !data.recipes.some((r) => r.id === p.recipe_id) && items(p.recipe).length > 0)
       .map((p) => ({ key: `p${p.id}`, name: p.name, names: [p.name], product: p, hot: star.has(p.id) })),
   ].sort((a, b) => b.hot - a.hot || a.name.localeCompare(b.name, 'vi'))
 
-  const q = plain(query.trim())
-  const shown = cards.filter((c) => !q || c.names.some((n) => plain(n).includes(q)))
+  return { cards, ingMap, star, featured, divs, setDiv }
+}
 
-  const Row = ({ r, div = 1 }) => {
-    const g = ingMap[r.ingredient_id]
+export const matchCard = (c, query) => {
+  const q = plain(query.trim())
+  return !q || c.names.some((n) => plain(n).includes(q))
+}
+
+function Row({ r, g, div = 1 }) {
+  return (
+    <div className="rx-row">
+      <span className="rx-ing">{g ? nfc(g.name) : '(nguyên liệu đã xóa)'}</span>
+      {altOf(g) ? (
+        // có quy đổi (trà 44 g = 380 ml): hiện ml cho dễ đong, kèm số g để cân
+        <span className="rx-amt">
+          {altText(Number(r.amount) / div, g)} <span className="rx-alt">({qty(Number(r.amount) / div, g.unit)})</span>
+        </span>
+      ) : (
+        <span className="rx-amt">{qty(Number(r.amount) / div, g?.unit || '')}</span>
+      )}
+    </div>
+  )
+}
+
+// Thẻ 1 công thức. noteOpen: mở sẵn phần cách làm (màn hình chia đôi, đỡ phải bấm)
+export function RecipeCard({ card, rx, noteOpen = false, className = '' }) {
+  const { recipe: r, used, product: p, hot } = card
+  const { ingMap, star, divs, setDiv } = rx
+  const title = (
+    <h2>
+      {hot && <Star size={16} className="inline-icon featured-star" aria-label="Món hôm nay" />}
+      {card.name}
+    </h2>
+  )
+  if (p)
     return (
-      <div className="rx-row">
-        <span className="rx-ing">{g ? nfc(g.name) : '(nguyên liệu đã xóa)'}</span>
-        {altOf(g) ? (
-          // có quy đổi (trà 44 g = 380 ml): hiện ml cho dễ đong, kèm số g để cân
-          <span className="rx-amt">
-            {altText(Number(r.amount) / div, g)} <span className="rx-alt">({qty(Number(r.amount) / div, g.unit)})</span>
+      <article className={`card rx-card ${hot ? 'hot' : ''} ${className}`}>
+        <div className="rx-head">
+          {title}
+          <span className="muted small">1 phần</span>
+        </div>
+        <div className="rx-list">
+          {items(p.recipe).map((it, i) => (
+            <Row key={i} r={it} g={ingMap[it.ingredient_id]} />
+          ))}
+        </div>
+      </article>
+    )
+  const div = divs[r.id] || 1
+  const list = items(r.items)
+  return (
+    <article className={`card rx-card ${hot ? 'hot' : ''} ${className}`}>
+      <div className="rx-head">
+        {title}
+        <div className="rx-div" role="group" aria-label="Chia mẻ">
+          {DIVS.map((d) => (
+            <button key={d} type="button" className={d === div ? 'active' : ''} onClick={() => setDiv(r.id, d)} aria-pressed={d === div}>
+              ÷{d}
+            </button>
+          ))}
+        </div>
+      </div>
+      {div > 1 && <div className="rx-badge">Đang xem 1/{div} mẻ</div>}
+      <div className="rx-list">
+        {list.length === 0 ? <p className="muted small">Chưa ghi nguyên liệu.</p> : list.map((it, i) => <Row key={i} r={it} g={ingMap[it.ingredient_id]} div={div} />)}
+      </div>
+      <div className="rx-foot">
+        {r.yield_ml > 0 && (
+          <span>
+            Ra được ≈ <b>{qty(r.yield_ml / div, 'ml')}</b>
+            {used
+              .filter((p) => p.volume_ml > 0)
+              .slice(0, 2)
+              .map((p) => ` · ${num(r.yield_ml / div / p.volume_ml, 1)} phần ${num(p.volume_ml)}ml`)
+              .join('')}
           </span>
-        ) : (
-          <span className="rx-amt">{qty(Number(r.amount) / div, g?.unit || '')}</span>
+        )}
+        {used.length > 0 && (
+          <span className="muted small">
+            Dùng cho: {used.map((p) => (star.has(p.id) ? `★ ${p.name}` : p.name)).join(', ')}
+          </span>
+        )}
+        {r.note && (
+          <details className="rx-note" open={noteOpen || undefined}>
+            <summary>Cách làm / ghi chú</summary>
+            <p>{nfc(r.note)}</p>
+          </details>
         )}
       </div>
-    )
-  }
+    </article>
+  )
+}
+
+export default function Recipes() {
+  const barista = useBarista()
+  const rx = useRecipes()
+  const [query, setQuery] = useState('')
+
+  if (!rx) return <Loading />
+  const { cards, featured } = rx
+  const shown = cards.filter((c) => matchCard(c, query))
 
   return (
     <>
@@ -126,71 +207,9 @@ export default function Recipes() {
           )}
 
           <div className="rx-grid">
-            {shown.map(({ key, recipe: r, used, product: p, hot }) => {
-              if (p)
-                return (
-                  <article key={key} className={`card rx-card ${hot ? 'hot' : ''}`}>
-                    <div className="rx-head">
-                      <h2>
-                        {hot && <Star size={16} className="inline-icon featured-star" aria-label="Món hôm nay" />}
-                        {p.name}
-                      </h2>
-                      <span className="muted small">1 phần</span>
-                    </div>
-                    <div className="rx-list">
-                      {items(p.recipe).map((it, i) => (
-                        <Row key={i} r={it} />
-                      ))}
-                    </div>
-                  </article>
-                )
-              const div = divs[r.id] || 1
-              const list = items(r.items)
-              return (
-                <article key={key} className={`card rx-card ${hot ? 'hot' : ''}`}>
-                  <div className="rx-head">
-                    <h2>
-                      {hot && <Star size={16} className="inline-icon featured-star" aria-label="Món hôm nay" />}
-                      {nfc(r.name)}
-                    </h2>
-                    <div className="rx-div" role="group" aria-label="Chia mẻ">
-                      {DIVS.map((d) => (
-                        <button key={d} type="button" className={d === div ? 'active' : ''} onClick={() => setDiv(r.id, d)} aria-pressed={d === div}>
-                          ÷{d}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {div > 1 && <div className="rx-badge">Đang xem 1/{div} mẻ</div>}
-                  <div className="rx-list">
-                    {list.length === 0 ? <p className="muted small">Chưa ghi nguyên liệu.</p> : list.map((it, i) => <Row key={i} r={it} div={div} />)}
-                  </div>
-                  <div className="rx-foot">
-                    {r.yield_ml > 0 && (
-                      <span>
-                        Ra được ≈ <b>{qty(r.yield_ml / div, 'ml')}</b>
-                        {used
-                          .filter((p) => p.volume_ml > 0)
-                          .slice(0, 2)
-                          .map((p) => ` · ${num(r.yield_ml / div / p.volume_ml, 1)} phần ${num(p.volume_ml)}ml`)
-                          .join('')}
-                      </span>
-                    )}
-                    {used.length > 0 && (
-                      <span className="muted small">
-                        Dùng cho: {used.map((p) => (star.has(p.id) ? `★ ${p.name}` : p.name)).join(', ')}
-                      </span>
-                    )}
-                    {r.note && (
-                      <details className="rx-note">
-                        <summary>Cách làm / ghi chú</summary>
-                        <p>{nfc(r.note)}</p>
-                      </details>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
+            {shown.map((c) => (
+              <RecipeCard key={c.key} card={c} rx={rx} />
+            ))}
           </div>
           {shown.length === 0 && <p className="muted" style={{ padding: '12px 4px' }}>Không tìm thấy công thức nào.</p>}
         </>
