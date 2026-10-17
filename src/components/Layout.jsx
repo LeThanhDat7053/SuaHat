@@ -17,12 +17,14 @@ import {
   Columns3,
   WifiOff,
   Wifi,
+  Moon,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { BARISTA_PATHS, setBarista, useBarista } from '../lib/barista'
 import { ReminderWatcher } from './Reminders'
 import { useLiveStatus } from '../lib/live'
 import { useNet } from '../lib/net'
+import { THEMES, setTheme, useTheme } from '../lib/theme'
 
 // mobile: hiện ở thanh dưới điện thoại (còn lại nằm trong "Khác")
 export const NAV = [
@@ -84,6 +86,10 @@ export default function Layout({ children }) {
           <Coffee size={20} />
           {barista ? 'Thoát chế độ pha chế' : 'Chế độ pha chế'}
         </button>
+        <div className="side-theme">
+          <Moon size={20} />
+          <ThemePick short />
+        </div>
         <button className="side-link side-logout" onClick={logout}>
           <LogOut size={20} />
           Đăng xuất
@@ -110,6 +116,20 @@ export default function Layout({ children }) {
           <span>Khác</span>
         </NavLink>
       </nav>
+    </div>
+  )
+}
+
+// Chọn Sáng / Tối / Theo máy (short: thanh bên hẹp → "Tự động" viết gọn)
+export function ThemePick({ short }) {
+  const theme = useTheme()
+  return (
+    <div className="seg" role="group" aria-label="Giao diện">
+      {THEMES.map((t) => (
+        <button key={t.id} type="button" className={theme === t.id ? 'active' : ''} onClick={() => setTheme(t.id)}>
+          {short && t.id === 'auto' ? 'Tự động' : t.label}
+        </button>
+      ))}
     </div>
   )
 }

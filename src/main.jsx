@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles.css'
 import { setupUpdates } from './lib/pwa'
+import { setupTheme } from './lib/theme'
 
 setupUpdates()
+setupTheme()
 
 // Máy tính bảng Android cài app lúc còn khóa dọc: mở khóa xoay (máy không hỗ trợ thì bỏ qua)
 try {

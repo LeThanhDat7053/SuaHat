@@ -5,6 +5,7 @@ import { showError, supabase } from '../lib/supabase'
 import { loadStockCached } from '../lib/stock'
 import { useLive } from '../lib/live'
 import { avgPrice } from '../lib/cost'
+import { missingColumn } from '../lib/quick'
 import { BIG_UNIT, fmtDate, fmtQty, money, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton } from '../components/ui'
 import { UNITS } from './Ingredients'
@@ -77,6 +78,7 @@ export default function Purchases() {
                   <div className="muted small">
                     {fmtQty(p.quantity, p.unit)} · {unitPrice(p.total / p.quantity, p.unit)}
                     {p.note ? ` · ${p.note}` : ''}
+                    {p.in_count ? ' · đã có trong kiểm kê, không cộng kho' : ''}
                   </div>
                 </div>
                 <strong>{money(p.total)}</strong>
@@ -109,6 +111,7 @@ const emptyLine = (ingredients) => ({
   buy_unit: '',
   quantity: '',
   total: '',
+  in_count: null, // ngày mua ≤ ngày kiểm kê: true = hàng đã nằm trong số đếm, false = về sau lúc kiểm; null = chưa chọn
 })
 
 // Tính số liệu của 1 dòng nhập: đơn vị, lượng đã đổi ra g / ml, giá mỗi đơn vị
@@ -131,6 +134,7 @@ function PurchaseForm({ onClose, onSaved }) {
   const [note, setNote] = useState('')
   const [lines, setLines] = useState([])
   const [busy, setBusy] = useState(false)
+  const [lastBuy, setLastBuy] = useState({}) // ingredient_id → lần nhập gần nhất (để so giá)
 
   useEffect(() => {
     loadStockCached().then(
@@ -140,25 +144,70 @@ function PurchaseForm({ onClose, onSaved }) {
       },
       (e) => showError(e),
     )
+    supabase
+      .from('purchases')
+      .select('ingredient_id,date,quantity,total')
+      .order('date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        const m = {}
+        ;(data || []).forEach((p) => p.ingredient_id && Number(p.quantity) > 0 && !m[p.ingredient_id] && (m[p.ingredient_id] = p))
+        setLastBuy(m)
+      })
   }, [])
 
   const ingredients = stock?.ingredients || []
   const setLine = (i, k, v) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, [k]: v } : l)))
   const grand = lines.reduce((s, l) => s + Number(l.total || 0), 0)
 
+  // Lần kiểm kê gần nhất có ngày ≥ ngày mua → hàng này có thể đã nằm trong số đếm, phải hỏi để không cộng kho 2 lần
+  const countOf = (info) => {
+    const lc = info.ing && !info.ing.no_stock && stock.lastCount[info.ing.id]
+    return lc && date <= lc.date ? lc : null
+  }
+  const inCountOf = (line, info) => !info.isNew && line.in_count === true && !!countOf(info)
+
   async function submit(e) {
     e.preventDefault()
     const infos = lines.map((l) => lineInfo(l, ingredients))
     if (infos.some((x) => !(x.quantity > 0))) return alert('Số lượng mỗi dòng phải lớn hơn 0')
+    const unanswered = infos.filter((x, i) => countOf(x) && lines[i].in_count == null)
+    if (unanswered.length) {
+      return alert(`Chọn giúp: ${unanswered.map((x) => x.ing.name).join(', ')} đã nằm trong số kiểm kê chưa? (ô hỏi ngay dưới dòng đó)`)
+    }
+    // cùng 1 nguyên liệu nhiều dòng trong phiếu → hay gặp khi bấm "Thêm nguyên liệu khác" rồi chọn trùng
+    const seen = {}
+    infos.forEach((x) => x.ing && (seen[x.ing.id] = (seen[x.ing.id] || 0) + 1))
+    // giá lần này gấp đôi / còn một nửa giá đang dùng → hay là gõ nhầm tiền hoặc số lượng
+    const odd = infos.filter((x) => x.ing && Number(x.ing.price_per_unit) > 0 && x.price > 0 && (x.price > x.ing.price_per_unit * 2 || x.price < x.ing.price_per_unit / 2))
+    if (odd.length) {
+      const list = odd.map((x) => `• ${x.ing.name}: lần này ${unitPrice(x.price, x.unit)}, đang dùng ${unitPrice(x.ing.price_per_unit, x.unit)}`).join('\n')
+      if (!confirm(`Giá khác thường:\n${list}\n\nKiểm tra lại số lượng / tổng tiền. OK = vẫn lưu, Hủy = sửa lại.`)) return
+    }
+    const twice = ingredients.filter((g) => seen[g.id] > 1).map((g) => g.name)
+    if (twice.length && !confirm(`${twice.join(', ')} có nhiều dòng trong phiếu này. Có phải nhập trùng không?\nOK = đúng là mua nhiều lần, vẫn lưu · Hủy = quay lại sửa`)) return
     setBusy(true)
+    // đã có phiếu giống hệt (cùng ngày, cùng nguyên liệu, cùng số lượng) → có thể đã nhập rồi
+    const ids = Object.keys(seen).map(Number)
+    if (ids.length) {
+      const { data: same, error } = await supabase.from('purchases').select('ingredient_id,quantity').eq('date', date).in('ingredient_id', ids)
+      if (showError(error)) return setBusy(false)
+      const hit = infos.filter((x) => x.ing && same.some((p) => p.ingredient_id === x.ing.id && Math.abs(Number(p.quantity) - x.quantity) < 1e-6))
+      const list = hit.map((x) => `${x.ing.name} ${fmtQty(x.quantity, x.unit)}`).join(', ')
+      if (hit.length && !confirm(`Ngày ${fmtDate(date)} đã có phiếu nhập giống hệt: ${list}.\nCó thể đã nhập rồi. Vẫn lưu thêm?`)) return setBusy(false)
+    }
+
     // tồn & giá hiện tại, cập nhật dần nếu 1 nguyên liệu xuất hiện nhiều dòng
     const cur = {}
     ingredients.forEach((g) => (cur[g.id] = { stock: stock.stock[g.id], price: Number(g.price_per_unit) }))
     const rows = []
+    const prices = {} // nguyên liệu có sẵn → giá bình quân mới, chỉ lưu sau khi phiếu nhập đã ghi xong
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       const info = infos[i]
       const total = Number(line.total || 0)
+      const inCount = inCountOf(line, info)
       let ingredient = info.ing
       if (info.isNew) {
         const { data, error } = await supabase
@@ -171,10 +220,11 @@ function PurchaseForm({ onClose, onSaved }) {
         cur[data.id] = { stock: info.quantity, price: info.price }
       } else {
         const c = cur[ingredient.id]
-        const price = avgPrice(c.stock, c.price, info.quantity, total)
-        const { error } = await supabase.from('ingredients').update({ price_per_unit: price }).eq('id', ingredient.id)
-        if (showError(error)) return setBusy(false)
-        cur[ingredient.id] = { stock: Math.max(0, c.stock) + info.quantity, price }
+        // hàng đã nằm trong số kiểm kê → tồn hiện tại đã gồm lượng này, không cộng thêm
+        const before = inCount ? Math.max(0, c.stock) - info.quantity : c.stock
+        const price = avgPrice(before, c.price, info.quantity, total)
+        prices[ingredient.id] = price
+        cur[ingredient.id] = { stock: inCount ? c.stock : Math.max(0, c.stock) + info.quantity, price }
       }
       rows.push({
         date,
@@ -184,11 +234,23 @@ function PurchaseForm({ onClose, onSaved }) {
         unit: ingredient.unit,
         total,
         note: note.trim() || null,
+        in_count: inCount,
       })
     }
-    const { error } = await supabase.from('purchases').insert(rows)
+    // chỉ gửi cột in_count (nang-cap-v8.sql) khi có dùng
+    const payload = rows.some((r) => r.in_count) ? rows : rows.map(({ in_count: _, ...r }) => r)
+    const { error } = await supabase.from('purchases').insert(payload)
+    if (missingColumn(error)) {
+      setBusy(false)
+      return alert('Cần chạy file supabase/nang-cap-v8.sql trong Supabase → SQL Editor để đánh dấu "hàng đã nằm trong số kiểm kê".')
+    }
+    if (showError(error)) return setBusy(false)
+    for (const [id, price] of Object.entries(prices)) {
+      const { error } = await supabase.from('ingredients').update({ price_per_unit: price }).eq('id', id)
+      if (showError(error)) break
+    }
     setBusy(false)
-    if (!showError(error)) onSaved()
+    onSaved()
   }
 
   return (
@@ -208,12 +270,14 @@ function PurchaseForm({ onClose, onSaved }) {
 
           {lines.map((line, i) => {
             const info = lineInfo(line, ingredients)
+            const lc = countOf(info)
+            const inCount = inCountOf(line, info)
             const c = info.ing && stock.stock[info.ing.id]
-            const newAvg = info.ing && info.price > 0 ? avgPrice(c, info.ing.price_per_unit, info.quantity, line.total) : 0
+            const newAvg = info.ing && info.price > 0 ? avgPrice(inCount ? Math.max(0, c) - info.quantity : c, info.ing.price_per_unit, info.quantity, line.total) : 0
             return (
               <div key={i} className="line-card">
                 <div className="line-card-head">
-                  <strong>Món {i + 1}</strong>
+                  <strong>Nguyên liệu {i + 1}</strong>
                   {lines.length > 1 && (
                     <button type="button" className="icon-btn" onClick={() => setLines(lines.filter((_, idx) => idx !== i))} aria-label="Bỏ dòng này">
                       <Trash2 size={16} />
@@ -234,6 +298,18 @@ function PurchaseForm({ onClose, onSaved }) {
                     <option value="new">+ Nguyên liệu mới…</option>
                   </select>
                 </Field>
+                {info.ing && !info.ing.no_stock && (
+                  <p className="field-hint buy-ctx">
+                    Đang còn <b>{fmtQty(c, info.unit)}</b>
+                    {lastBuy[info.ing.id] && (
+                      <>
+                        {' '}
+                        · lần trước {fmtDate(lastBuy[info.ing.id].date)}: {fmtQty(lastBuy[info.ing.id].quantity, info.unit)} ={' '}
+                        {money(lastBuy[info.ing.id].total)} ({unitPrice(lastBuy[info.ing.id].total / lastBuy[info.ing.id].quantity, info.unit)})
+                      </>
+                    )}
+                  </p>
+                )}
                 {info.isNew && (
                   <div className="form-row">
                     <Field label="Tên nguyên liệu mới">
@@ -296,6 +372,27 @@ function PurchaseForm({ onClose, onSaved }) {
                     tính nữa. Kho vẫn cộng / trừ bình thường.
                   </p>
                 )}
+                {lc && (
+                  <div className="field">
+                    <span className="field-label">Lúc kiểm kê ngày {fmtDate(lc.date)}, hàng này đã có trong kho chưa?</span>
+                    <div className="mode-pick">
+                      <label className={`mode-opt ${line.in_count === true ? 'on' : ''}`}>
+                        <input type="radio" name={`in-count-${i}`} checked={line.in_count === true} onChange={() => setLine(i, 'in_count', true)} />
+                        <span>
+                          <b>Có rồi — lúc cân / đếm đã có hàng này</b>
+                          <span className="muted small block">Chỉ ghi tiền, không cộng thêm vào kho (tránh cộng 2 lần).</span>
+                        </span>
+                      </label>
+                      <label className={`mode-opt ${line.in_count === false ? 'on' : ''}`}>
+                        <input type="radio" name={`in-count-${i}`} checked={line.in_count === false} onChange={() => setLine(i, 'in_count', false)} />
+                        <span>
+                          <b>Chưa — hàng về sau lúc kiểm kê</b>
+                          <span className="muted small block">Cộng {info.quantity > 0 ? fmtQty(info.quantity, info.unit) : 'số này'} vào kho.</span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
                 {info.price > 0 && (
                   <div className="summary-box">
                     <div className="kv">
@@ -318,7 +415,7 @@ function PurchaseForm({ onClose, onSaved }) {
           })}
 
           <button type="button" className="btn btn-ghost" onClick={() => setLines([...lines, emptyLine(ingredients)])}>
-            <Plus size={16} /> Thêm món khác
+            <Plus size={16} /> Thêm nguyên liệu khác
           </button>
 
           <div className="form-actions">

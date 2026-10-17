@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { BookOpen, Columns3, CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
 import { setSetting, showError, supabase } from '../lib/supabase'
 import { addDays, money, moneyShort, todayStr } from '../lib/format'
-import { productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
+import { productCost, saleCost, saleRevenue, toMap, usageSnapshot } from '../lib/cost'
+import { withUsage } from '../lib/usage'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
 import { useLive } from '../lib/live'
@@ -142,7 +143,8 @@ export default function Sales({ split = false }) {
     setStatus('saving')
     const { error } = isEmptyRow(row)
       ? await supabase.from('sales').delete().eq('date', date).eq('product_id', product.id).eq('source', '')
-      : await supabase.from('sales').upsert(
+      : await withUsage(
+          (r) => supabase.from('sales').upsert(r, { onConflict: 'date,product_id,source' }),
           {
             date,
             product_id: product.id,
@@ -153,8 +155,8 @@ export default function Sales({ split = false }) {
             discount: Number(row.discount || 0),
             unit_price: row.unit_price,
             unit_cost: row.unit_cost,
+            usage: row.usage ?? null,
           },
-          { onConflict: 'date,product_id,source' },
         )
     setStatus(error ? 'error' : 'saved')
     showError(error)
@@ -203,6 +205,7 @@ export default function Sales({ split = false }) {
   })
 
   const lyCost = (product) => productCost(product, costCtx.ing, costCtx.rec)
+  const usageOf = (product) => usageSnapshot(product, costCtx.rec)
 
   const newRow = (product) => ({
     quantity: 0,
@@ -210,6 +213,7 @@ export default function Sales({ split = false }) {
     discount: 0,
     unit_price: product.price,
     unit_cost: lyCost(product),
+    usage: usageOf(product),
   })
 
   // patch: { quantity } hoặc { gift_qty, discount }
@@ -217,6 +221,8 @@ export default function Sales({ split = false }) {
     if ('quantity' in patch) patch.quantity = Math.max(0, Math.floor(patch.quantity || 0))
     // giữ giá của lần nhập đầu tiên trong ngày để lịch sử không bị thay đổi
     const row = { ...(rows[product.id] || newRow(product)), product_id: product.id, product_name: product.name, source: '', ...patch }
+    // dòng cũ (trước nang-cap-v8) chưa chốt lượng nguyên liệu → chốt theo công thức hiện tại
+    row.usage ??= usageOf(product)
     setRows((prev) => ({ ...prev, [product.id]: row }))
     unsaved.current[product.id] = { date, product, row }
     clearTimeout(timers.current[product.id])
@@ -231,21 +237,18 @@ export default function Sales({ split = false }) {
     setStatus('saving')
     const { data, error } =
       quantity > 0
-        ? await supabase
-            .from('waste')
-            .upsert(
-              {
-                date,
-                product_id: product.id,
-                product_name: product.name,
-                quantity,
-                unit_cost: waste[product.id]?.unit_cost ?? lyCost(product),
-                reason: reason || null,
-              },
-              { onConflict: 'date,product_id' },
-            )
-            .select()
-            .single()
+        ? await withUsage(
+            (r) => supabase.from('waste').upsert(r, { onConflict: 'date,product_id' }).select().single(),
+            {
+              date,
+              product_id: product.id,
+              product_name: product.name,
+              quantity,
+              unit_cost: waste[product.id]?.unit_cost ?? lyCost(product),
+              reason: reason || null,
+              usage: waste[product.id]?.usage ?? usageOf(product),
+            },
+          )
         : await supabase.from('waste').delete().eq('date', date).eq('product_id', product.id)
     setStatus(error ? 'error' : 'saved')
     if (showError(error)) return

@@ -1,5 +1,7 @@
 import { getSetting, supabase } from './supabase'
 import { cached } from './cache'
+import { toMap, usageSnapshot } from './cost'
+import { loadCatalog } from './catalog'
 
 // Mức chung khi bán dạng Chai (từng món có thể đặt riêng: products.chai_surcharge / chai_cost)
 export const CHAI_DEFAULTS = { surcharge: 3000, cost: 2500 }
@@ -69,7 +71,17 @@ export function variantsText(lines) {
 
 // Đơn đã giao → ghi vào bán hàng (1 dòng cho mỗi món + loại + đá/nóng), làm trong 1 giao dịch ở database.
 // Tên món chỉ ghi Ly / Chai để báo cáo không bị tách theo đá / nóng / độ ngọt; các lựa chọn này nằm trong source.
+// Kèm lượng nguyên liệu mỗi phần (usage) chốt lúc giao; database chưa chạy nang-cap-v8 thì hàm tự bỏ qua cột này.
 export async function completeQuickOrder(order) {
+  let usageOf = () => null
+  try {
+    const c = await loadCatalog()
+    const prodMap = toMap(c.products)
+    const recMap = toMap(c.recipes)
+    usageOf = (id) => usageSnapshot(prodMap[id], recMap)
+  } catch {
+    /* mất mạng lúc tải công thức: vẫn ghi đơn, kho tính theo công thức hiện tại */
+  }
   const rows = order.lines
     .filter((l) => l.qty > 0)
     .map((l) => ({
@@ -81,6 +93,7 @@ export async function completeQuickOrder(order) {
       quantity: l.qty,
       unit_price: l.price,
       unit_cost: l.cost,
+      usage: usageOf(l.product_id),
     }))
   const { error } = await supabase.rpc('complete_quick_order', { p_id: order.id, p_rows: rows })
   return error

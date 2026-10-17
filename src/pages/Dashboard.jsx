@@ -37,10 +37,30 @@ function presetRange(key) {
   return monthRange(addDays(firstThis, -1).slice(0, 7))
 }
 
-// Kỳ liền trước, cùng số ngày
+// Kỳ trước để so sánh:
+// - trong 1 tuần, bắt đầu thứ 2 ("Tuần này") → cùng các thứ của tuần trước (T2–T6 so với T2–T6)
+// - trong 1 tháng, bắt đầu ngày 1 ("Tháng này") → cùng các ngày của tháng trước (1–17 so với 1–17)
+// - còn lại: kỳ liền trước, cùng số ngày
 function prevRange({ from, to }) {
   const n = daysBetween(from, to).length
+  if (periodRange('week', from).from === from && n <= 7) return { from: addDays(from, -7), to: addDays(to, -7) }
+  if (from.slice(8) === '01' && from.slice(0, 7) === to.slice(0, 7)) {
+    const last = monthRange(addDays(from, -1).slice(0, 7))
+    const to2 = `${last.from.slice(0, 8)}${to.slice(8)}`
+    // trọn tháng (VD "Tháng trước") → so trọn tháng trước nữa
+    const full = to === monthRange(to.slice(0, 7)).to
+    return { from: last.from, to: full || to2 > last.to ? last.to : to2 }
+  }
   return { from: addDays(from, -n), to: addDays(from, -1) }
+}
+
+// Tuần này (thứ 2 → hôm nay) so với cùng các ngày tuần trước — luôn hiện, không phụ thuộc kỳ đang xem
+async function fetchWeek() {
+  const t = todayStr()
+  const now = { from: periodRange('week', t).from, to: t }
+  const before = prevRange(now)
+  const [a, b] = await Promise.all([loadRange(now, false), loadRange(before, false)])
+  return { now: { ...summarize(a.sales, a.waste), range: now }, before: { ...summarize(b.sales, b.waste), range: before } }
 }
 
 const sum = (rows, f) => rows.reduce((s, r) => s + f(r), 0)
@@ -99,9 +119,18 @@ async function fetchUpcoming() {
   return data
 }
 
-// cảnh báo: nguyên liệu sắp hết, món lãi mỏng
+// cảnh báo: nguyên liệu sắp hết, món lãi mỏng, đơn bị bỏ quên
 async function fetchAlerts() {
-  const [st, margin] = await Promise.all([loadStockCached(), getSetting('margin_min', DEFAULT_MARGIN)])
+  const t = todayStr()
+  const pendingBefore = (table, col) => supabase.from(table).select('id', { count: 'exact', head: true }).eq('status', 'pending').lt(col, t)
+  const [st, margin, qo, po] = await Promise.all([
+    loadStockCached(),
+    getSetting('margin_min', DEFAULT_MARGIN),
+    pendingBefore('quick_orders', 'date'),
+    pendingBefore('orders', 'order_date'),
+  ])
+  // đơn chưa bấm "Đã xong" thì chưa có doanh thu và chưa trừ kho (lỗi = chưa có bảng → bỏ qua)
+  const stale = { quick: qo.error ? 0 : qo.count || 0, pre: po.error ? 0 : po.count || 0 }
   const ingMap = toMap(st.ingredients)
   const recMap = toMap(st.recipes)
   const low = st.ingredients.filter((g) => !g.no_stock && g.min_stock > 0 && st.stock[g.id] < g.min_stock)
@@ -109,7 +138,7 @@ async function fetchAlerts() {
     .filter((p) => p.active && p.price > 0)
     .map((p) => ({ ...p, pct: ((p.price - productCost(p, ingMap, recMap)) / p.price) * 100 }))
     .filter((p) => p.pct < Number(margin))
-  return { low, thin, stock: st.stock, margin }
+  return { low, thin, stale, stock: st.stock, margin }
 }
 
 export default function Dashboard() {
@@ -119,9 +148,10 @@ export default function Dashboard() {
   const [data, setData] = useState(() => peek(reportKey(presetRange('month'))) || null)
   const [upcoming, setUpcoming] = useState(() => peek('dash-upcoming') || [])
   const [alerts, setAlerts] = useState(() => peek('dash-alerts') || null)
+  const [week, setWeek] = useState(() => peek('dash-week') || null)
   const [tick, setTick] = useState(0) // tăng lên khi có dữ liệu mới → tải lại
   useLive(
-    ['sales', 'waste', 'purchases', 'expenses', 'stock_counts', 'day_closings', 'orders', 'products', 'ingredients', 'recipes', 'settings'],
+    ['sales', 'waste', 'purchases', 'expenses', 'stock_counts', 'day_closings', 'orders', 'quick_orders', 'products', 'ingredients', 'recipes', 'settings'],
     () => setTick((t) => t + 1),
   )
 
@@ -144,6 +174,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     cached('dash-upcoming', fetchUpcoming).then(setUpcoming, showError)
+    cached('dash-week', fetchWeek).then(setWeek, (e) => console.error(e))
     // tồn kho tính khá nặng: dùng lại trong 2 phút
     cached('dash-alerts', fetchAlerts, 120000).then(setAlerts, (e) => console.error(e))
   }, [tick])
@@ -174,11 +205,23 @@ export default function Dashboard() {
         </div>
       )}
 
-      {alerts && (alerts.low.length > 0 || alerts.thin.length > 0) && (
+      {alerts && (alerts.low.length > 0 || alerts.thin.length > 0 || alerts.stale?.quick > 0 || alerts.stale?.pre > 0) && (
         <div className="card alert-card">
           <strong>
             <TriangleAlert size={18} className="inline-icon" /> Cần chú ý
           </strong>
+          {alerts.stale?.quick > 0 && (
+            <Link to="/ban-hang" className="alert-row">
+              <span>{alerts.stale.quick} đơn nhanh từ hôm trước chưa bấm “Đã xong”</span>
+              <span className="muted">chưa tính tiền, chưa trừ kho</span>
+            </Link>
+          )}
+          {alerts.stale?.pre > 0 && (
+            <Link to="/lich" className="alert-row">
+              <span>{alerts.stale.pre} đơn đặt trước quá ngày giao vẫn đang chờ</span>
+              <span className="muted">chưa tính tiền, chưa trừ kho</span>
+            </Link>
+          )}
           {alerts.low.map((g) => (
             <Link key={'i' + g.id} to="/nguyen-lieu" className="alert-row">
               <span>{g.name} sắp hết</span>
@@ -195,6 +238,8 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+
+      {week && preset !== 'week' && <WeekCompare week={week} />}
 
       {!data ? <Loading /> : <Report data={data} range={range} />}
 
@@ -252,6 +297,37 @@ function Change({ now, before, prefix = '', suffix = null }) {
       </span>
       {suffix}
     </>
+  )
+}
+
+function WeekCompare({ week }) {
+  const { now, before } = week
+  const span = (r) => (r.from === r.to ? dm(r.from) : `${dm(r.from)}–${dm(r.to)}`)
+  const rows = [
+    { label: 'Doanh thu', now: now.revenue, before: before.revenue, fmt: money },
+    { label: 'Số phần bán', now: now.cups, before: before.cups, fmt: (v) => num(v) },
+    { label: 'Lãi gộp', now: now.gross, before: before.gross, fmt: money },
+  ]
+  return (
+    <div className="card week-compare">
+      <div className="week-compare-head">
+        <strong>Tuần này so với tuần trước</strong>
+        <span className="muted small">
+          {span(now.range)} · {span(before.range)}
+        </span>
+      </div>
+      {rows.map((r) => (
+        <div key={r.label} className="week-row">
+          <span className="muted">{r.label}</span>
+          <span className="week-val">
+            <strong>{r.fmt(r.now)}</strong>
+            <span className="muted small"> / {r.fmt(r.before)}</span>
+          </span>
+          <span className="week-change">{r.before ? <Change now={r.now} before={r.before} /> : <span className="muted small">—</span>}</span>
+        </div>
+      ))}
+      <span className="muted small">Lãi gộp = bán được − nguyên liệu − hàng hủy (chưa trừ chi phí khác)</span>
+    </div>
   )
 }
 

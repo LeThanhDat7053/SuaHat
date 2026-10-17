@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
-import { productCost, toMap } from './cost'
+import { productCost, toMap, usageSnapshot } from './cost'
+import { withUsage } from './usage'
 import { PACKS, getChaiDefaults, packCost, packText, variantText } from './quick'
 
 // Dòng Ly: 'order:12' (như trước), dòng Chai: 'order:12:chai' — 1 món đặt cả Ly lẫn Chai vẫn ghi được 2 dòng bán
@@ -89,8 +90,9 @@ export async function syncOrderSales(order) {
       unit_price: g.amount / g.qty,
       unit_cost: product ? packCost(product, g.pack, lyCost, chaiDef) : 0,
       discount: idx === 0 ? Number(order.discount || 0) : 0, // giảm giá cả đơn ghi vào dòng đầu
+      usage: usageSnapshot(product, recMap),
     }
   })
-  const ins = await supabase.from('sales').insert(rows)
+  const ins = await withUsage((r) => supabase.from('sales').insert(r), rows)
   return ins.error
 }

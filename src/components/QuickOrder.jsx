@@ -6,7 +6,7 @@ import { PACKS, SUGARS, TEMPS, chaiExtraCost, chaiSurcharge, lineKey, linesProfi
 import { setSetting, showError, supabase } from '../lib/supabase'
 import { Field, Modal, MoneyInput, SaveButton, useSubmit } from './ui'
 
-function Stepper({ value, onChange, label }) {
+export function Stepper({ value, onChange, label }) {
   const set = (v) => onChange(Math.max(0, Math.floor(Number(v) || 0)))
   return (
     <div className="stepper stepper-inline">
@@ -56,9 +56,10 @@ export function VariantTag({ pack, temp, sugar, qty }) {
   )
 }
 
-// Popup khi bấm vào món: chọn độ ngọt, rồi bấm ô Đá / Nóng của Ly / Chai để thêm (bấm nhiều lần = nhiều phần), OK.
+// Chọn phần cho 1 món: chọn độ ngọt, rồi bấm ô Đá / Nóng của Ly / Chai (bấm nhiều lần = nhiều phần).
 // Bắt đầu từ 0 nên không lo dư 1 ly. Kết hợp tùy ý, VD 3 ly = 2 đá + 1 nóng ít ngọt.
-export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }) {
+// Dùng ở popup Bán hàng (PackPicker) và ngay trong form Đơn đặt (Lịch).
+export function useVariantPick(product, def, lyCost = 0) {
   const [qty, setQty] = useState({}) // 'pack:temp:sugar' → số phần
   const [sugar, setSugar] = useState('')
   const price = { ly: packPrice(product, 'ly', def), chai: packPrice(product, 'chai', def) }
@@ -83,6 +84,86 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
   const total = linesTotal(chosen)
   // số đã chọn ở độ ngọt khác (hiện nhỏ trên ô để không quên)
   const otherSugar = (pack, temp) => chosen.filter((l) => l.pack === pack && l.temp === temp && (l.sugar || '') !== sugar).reduce((s, l) => s + l.qty, 0)
+  return { sugar, setSugar, price, get, bump, chosen, count, total, otherSugar, reset: () => setQty({}) }
+}
+
+export function VariantGrid({ product, def, pick }) {
+  const { sugar, setSugar, price, get, bump, chosen, count, otherSugar, reset } = pick
+  return (
+    <>
+      <div className="sugar-pick" role="group" aria-label="Độ ngọt">
+        {Object.entries(SUGARS).map(([k, label]) => (
+          <button key={k} type="button" className={`sugar-${k || 'normal'} ${sugar === k ? 'active' : ''}`} aria-pressed={sugar === k} onClick={() => setSugar(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="vgrid">
+        <span />
+        {Object.entries(TEMPS).map(([temp, label]) => {
+          const Icon = TEMP_ICON[temp]
+          return (
+            <span key={temp} className={`vgrid-col vtemp-${temp}`}>
+              <Icon size={16} aria-hidden="true" /> {label}
+            </span>
+          )
+        })}
+        {Object.entries(PACKS).map(([pack, label]) => (
+          <Fragment key={pack}>
+            <div className="vgrid-pack">
+              <strong>
+                {(() => {
+                  const PackIcon = PACK_ICON[pack]
+                  return <PackIcon size={24} aria-hidden="true" />
+                })()}{' '}
+                {label}
+              </strong>
+              <span>{money(price[pack])}</span>
+              {pack === 'chai' && <span className="muted small">+{money(chaiSurcharge(product, def))}</span>}
+            </div>
+            {Object.entries(TEMPS).map(([temp, tLabel]) => {
+              const k = `${pack}:${temp}:${sugar}`
+              const n = get(k)
+              const other = otherSugar(pack, temp)
+              const name = variantText(pack, temp, sugar)
+              return (
+                <div key={k} className={`vtile vtemp-${temp} ${n > 0 ? 'on' : ''}`}>
+                  <button type="button" className="vtile-add" onClick={() => bump(k, 1)} aria-label={`Thêm 1 ${name}`}>
+                    {n > 0 ? <span className="vtile-n">{n}</span> : <Plus size={22} />}
+                  </button>
+                  {n > 0 && (
+                    <button type="button" className="vtile-minus" onClick={() => bump(k, -1)} aria-label={`Bớt 1 ${name}`}>
+                      <Minus size={14} />
+                    </button>
+                  )}
+                  {other > 0 && <span className="vtile-other">+{other} khác</span>}
+                </div>
+              )
+            })}
+          </Fragment>
+        ))}
+      </div>
+      <div className="vsum">
+        {count === 0 ? (
+          <span className="muted small">Bấm ô Đá / Nóng để thêm (bắt đầu từ 0). Ít / không ngọt: chọn ở trên trước rồi bấm ô.</span>
+        ) : (
+          <>
+            {chosen.map((l) => (
+              <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} sugar={l.sugar} qty={l.qty} />
+            ))}
+            <button type="button" className="link-btn vsum-clear" onClick={reset}>
+              Chọn lại
+            </button>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }) {
+  const pick = useVariantPick(product, def, lyCost)
+  const { chosen, count, total } = pick
 
   function ok(e) {
     e.preventDefault()
@@ -93,72 +174,7 @@ export function PackPicker({ product, lyCost, def, onAdd, onEditPrice, onClose }
   return (
     <Modal title={product.name} onClose={onClose}>
       <form className="form" onSubmit={ok}>
-        <div className="sugar-pick" role="group" aria-label="Độ ngọt">
-          {Object.entries(SUGARS).map(([k, label]) => (
-            <button key={k} type="button" className={`sugar-${k || 'normal'} ${sugar === k ? 'active' : ''}`} aria-pressed={sugar === k} onClick={() => setSugar(k)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="vgrid">
-          <span />
-          {Object.entries(TEMPS).map(([temp, label]) => {
-            const Icon = TEMP_ICON[temp]
-            return (
-              <span key={temp} className={`vgrid-col vtemp-${temp}`}>
-                <Icon size={16} aria-hidden="true" /> {label}
-              </span>
-            )
-          })}
-          {Object.entries(PACKS).map(([pack, label]) => (
-            <Fragment key={pack}>
-              <div className="vgrid-pack">
-                <strong>
-                  {(() => {
-                    const PackIcon = PACK_ICON[pack]
-                    return <PackIcon size={24} aria-hidden="true" />
-                  })()}{' '}
-                  {label}
-                </strong>
-                <span>{money(price[pack])}</span>
-                {pack === 'chai' && <span className="muted small">+{money(chaiSurcharge(product, def))}</span>}
-              </div>
-              {Object.entries(TEMPS).map(([temp, tLabel]) => {
-                const k = `${pack}:${temp}:${sugar}`
-                const n = get(k)
-                const other = otherSugar(pack, temp)
-                const name = variantText(pack, temp, sugar)
-                return (
-                  <div key={k} className={`vtile vtemp-${temp} ${n > 0 ? 'on' : ''}`}>
-                    <button type="button" className="vtile-add" onClick={() => bump(k, 1)} aria-label={`Thêm 1 ${name}`}>
-                      {n > 0 ? <span className="vtile-n">{n}</span> : <Plus size={22} />}
-                    </button>
-                    {n > 0 && (
-                      <button type="button" className="vtile-minus" onClick={() => bump(k, -1)} aria-label={`Bớt 1 ${name}`}>
-                        <Minus size={14} />
-                      </button>
-                    )}
-                    {other > 0 && <span className="vtile-other">+{other} khác</span>}
-                  </div>
-                )
-              })}
-            </Fragment>
-          ))}
-        </div>
-        <div className="vsum">
-          {count === 0 ? (
-            <span className="muted small">Bấm ô Đá / Nóng để thêm (bắt đầu từ 0). Ít / không ngọt: chọn ở trên trước rồi bấm ô.</span>
-          ) : (
-            <>
-              {chosen.map((l) => (
-                <VariantTag key={lineKey(l)} pack={l.pack} temp={l.temp} sugar={l.sugar} qty={l.qty} />
-              ))}
-              <button type="button" className="link-btn vsum-clear" onClick={() => setQty({})}>
-                Chọn lại
-              </button>
-            </>
-          )}
-        </div>
+        <VariantGrid product={product} def={def} pick={pick} />
         <div className="form-actions vactions">
           {onEditPrice && (
             <button type="button" className="btn btn-ghost btn-edit-price" onClick={onEditPrice}>

@@ -28,6 +28,15 @@ export function productUsage(product, recipeMap = {}) {
   return out
 }
 
+// Lượng nguyên liệu của 1 phần, chốt lúc bán (lưu vào sales.usage / waste.usage) để sau này
+// sửa công thức / xóa món không làm đổi số đã bán. {} = món không có công thức, null = không rõ món.
+export function usageSnapshot(product, recipeMap = {}) {
+  if (!product) return null
+  const out = {}
+  for (const [id, amount] of Object.entries(productUsage(product, recipeMap))) out[id] = +amount.toFixed(4)
+  return out
+}
+
 // Giá vốn 1 phần = nguyên liệu (theo giá bình quân hiện tại) + chi phí phụ
 export function productCost(product, ingMap, recipeMap = {}) {
   const usage = productUsage(product, recipeMap)
@@ -65,3 +74,11 @@ export const saleCost = (r) => (r.quantity + (r.gift_qty || 0)) * Number(r.unit_
 
 // Mức lãi (% giá bán) dưới mức này thì báo "lãi mỏng"
 export const DEFAULT_MARGIN = 40
+
+// Giá bán thấp nhất để đạt mức lãi `margin` (% giá bán), làm tròn lên nghìn đồng.
+// null khi chưa tính được (chưa có giá vốn, hoặc mức lãi ≥ 100%).
+export function suggestPrice(cost, margin) {
+  const m = Number(margin)
+  if (!(cost > 0) || !(m < 100)) return null
+  return Math.ceil(cost / (1 - m / 100) / 1000) * 1000
+}

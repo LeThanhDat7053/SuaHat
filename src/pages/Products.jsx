@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Copy, CupSoda, FlaskConical, Plus, Search, Star, Trash2, X } from 'lucide-react'
 import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { BIG_UNIT, fmtQty, money, num } from '../lib/format'
-import { DEFAULT_MARGIN, batchCost, productCost, productSources, productUsage, toMap, unitCost } from '../lib/cost'
+import { DEFAULT_MARGIN, batchCost, suggestPrice, productCost, productSources, productUsage, toMap, unitCost } from '../lib/cost'
 import { CHAI_DEFAULTS, getChaiDefaults } from '../lib/quick'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
 import { peek } from '../lib/cache'
@@ -29,6 +29,9 @@ export default function Products() {
   const [margin, setMargin] = useState(DEFAULT_MARGIN)
   const [featured, setFeatured] = useState(() => peek(FEATURED_KEY) || []) // "Món hôm nay" chọn ở trang Bán hàng
   const [query, setQuery] = useState('')
+  // Lọc theo % lãi: 'all' | 'gte' (từ X% trở lên) | 'lte' (từ X% trở xuống)
+  const [pctMode, setPctMode] = useState('all')
+  const [pctAt, setPctAt] = useState(80)
 
   function load() {
     loadCatalog(0).then((c) => setData(sortProducts(c)), showError)
@@ -50,17 +53,25 @@ export default function Products() {
   if (!data) return <Loading />
   const { products, ingredients, recipes } = data
   const ingMap = toMap(ingredients)
-  const recMap = toMap(recipes)
+  const recMap = toMap(recipes) 
   // Món hôm nay (tô vàng + sao) lên đầu, giống trang Bán hàng; mẻ dùng cho món hôm nay cũng vậy
   const star = new Set(featured)
   const hotRecipe = new Set(products.filter((p) => star.has(p.id)).map((p) => p.recipe_id))
   // Tìm không dấu theo tên món, tên công thức mẻ, tên nguyên liệu ("hat dieu" khớp "Hạt điều")
   const q = plain(query.trim())
-  const hit = (...names) => !q || names.some((n) => plain(n).includes(q))
+  const hit = (...names) => !q || names.some((n) => plain(n).includes(q)) 
   const ingNames = (list) => (Array.isArray(list) ? list : []).map((r) => ingMap[r.ingredient_id]?.name)
+  const pctOf = (p) => (p.price > 0 ? ((p.price - productCost(p, ingMap, recMap)) / p.price) * 100 : 0)
+  const pctMap = Object.fromEntries(products.map((p) => [p.id, pctOf(p)]))
+  const at = Number(pctAt) || 0
+  const inRange = (p) => pctMode === 'all' || (pctMode === 'gte' ? pctMap[p.id] >= at : pctMap[p.id] <= at)
   const productList = [...products]
     .filter((p) => hit(p.name, recMap[p.recipe_id]?.name, ...Object.keys(productUsage(p, recMap)).map((id) => ingMap[id]?.name)))
-    .sort((a, b) => star.has(b.id) - star.has(a.id))
+    .filter(inRange)
+    // đang lọc theo % lãi → xếp theo % lãi (lọc "trở lên": cao nhất trước; "trở xuống": thấp nhất trước)
+    .sort((a, b) =>
+      pctMode === 'all' ? star.has(b.id) - star.has(a.id) : pctMode === 'gte' ? pctMap[b.id] - pctMap[a.id] : pctMap[a.id] - pctMap[b.id],
+    )
   const recipeList = [...recipes]
     .filter((r) => hit(r.name, ...ingNames(r.items), ...products.filter((p) => p.recipe_id === r.id).map((p) => p.name)))
     .sort((a, b) => hotRecipe.has(b.id) - hotRecipe.has(a.id))
@@ -124,17 +135,48 @@ export default function Products() {
             </label>
           </div>
           {products.length > 0 && searchBox}
+          {products.length > 0 && (
+            <div className="pct-filter">
+              <span className="muted small">Lọc theo lãi</span>
+              <div className="seg" role="group" aria-label="Lọc theo % lãi">
+                <button type="button" className={pctMode === 'all' ? 'active' : ''} onClick={() => setPctMode('all')}>
+                  Tất cả
+                </button>
+                <button type="button" className={pctMode === 'gte' ? 'active' : ''} onClick={() => setPctMode('gte')}>
+                  Từ … trở lên
+                </button>
+                <button type="button" className={pctMode === 'lte' ? 'active' : ''} onClick={() => setPctMode('lte')}>
+                  Từ … trở xuống
+                </button>
+              </div>
+              {pctMode !== 'all' && (
+                <label className="inline-field">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    inputMode="numeric"
+                    value={pctAt}
+                    onChange={(e) => setPctAt(e.target.value)}
+                    aria-label="Mức % lãi"
+                  />
+                  % → <strong>{productList.length} món</strong>
+                </label>
+              )}
+            </div>
+          )}
           {products.length === 0 ? (
             <Empty icon={CupSoda}>Chưa có món nào. Nên tạo “Công thức mẻ” trước, rồi bấm “Thêm món”.</Empty>
           ) : productList.length === 0 ? (
-            noHit
+            query.trim() ? noHit : <p className="muted" style={{ padding: '12px 4px' }}>Không có món nào trong khoảng lãi này.</p>
           ) : (
             <div className="card-grid">
               {productList.map((p) => {
                 const cost = productCost(p, ingMap, recMap)
                 const profit = p.price - cost
-                const pct = p.price > 0 ? (profit / p.price) * 100 : 0
+                const pct = pctMap[p.id]
                 const low = pct < Number(margin)
+                const better = low && p.active ? suggestPrice(cost, margin) : null
                 const src = productSources(p, ingMap, recMap)
                 return (
                   <button key={p.id} className={`card product-card ${p.active ? '' : 'inactive'} ${star.has(p.id) ? 'hot' : ''}`} onClick={() => setEditing(p)}>
@@ -159,12 +201,17 @@ export default function Products() {
                       <span>{money(cost)}</span>
                     </div>
                     <SourceLines src={src} />
-                    <div className="kv">
+                    <div className="kv kv-profit">
                       <span>Lãi / phần</span>
                       <strong className={profit < 0 || low ? 'danger-text' : 'good-text'}>
                         {money(profit)} ({num(pct, 0)}%)
                       </strong>
                     </div>
+                    {better && (
+                      <span className="price-hint">
+                        Nên bán ≥ <strong>{money(better)}</strong> để lãi {num(margin, 0)}%
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -389,7 +436,20 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
   }
 
   async function remove() {
-    if (!confirm(`Xóa "${product.name}"? Lịch sử bán hàng vẫn được giữ lại.\nNếu chỉ tạm ngừng bán, bỏ chọn "Đang bán" sẽ tốt hơn.`)) return
+    // Món đã bán / hủy: xóa đi thì các dòng đó mất món → kho không trừ được nữa, báo cáo lệch → chỉ cho ẩn
+    const used = await Promise.all(
+      ['sales', 'waste'].map((t) => supabase.from(t).select('id', { count: 'exact', head: true }).eq('product_id', product.id)),
+    )
+    const err = used.find((r) => r.error)?.error
+    if (showError(err)) return
+    const n = used.reduce((s, r) => s + (r.count || 0), 0)
+    if (n > 0) {
+      if (!confirm(`"${product.name}" đã có ${n} dòng bán / hủy, xóa đi thì kho và báo cáo sẽ tính sai.\nẨn món này (thôi bán, giữ lịch sử) thay vì xóa?`)) return
+      const { error } = await supabase.from('products').update({ active: false }).eq('id', product.id)
+      if (!showError(error)) onSaved()
+      return
+    }
+    if (!confirm(`Xóa "${product.name}"? Món này chưa bán lần nào.`)) return
     const { error } = await supabase.from('products').delete().eq('id', product.id)
     if (!showError(error)) onSaved()
   }
@@ -487,6 +547,16 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
               {money(profit)} ({num(pct, 0)}%)
             </strong>
           </div>
+          {pct < margin && suggestPrice(cost, margin) > Number(form.price || 0) && (
+            <div className="price-hint price-hint-row">
+              <span>
+                Nên bán ≥ <strong>{money(suggestPrice(cost, margin))}</strong> để lãi {num(margin, 0)}%
+              </span>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => set('price', suggestPrice(cost, margin))}>
+                Dùng giá này
+              </button>
+            </div>
+          )}
         </div>
 
         <label className="check">
@@ -653,7 +723,13 @@ function RecipeForm({ recipe, ingredients, products, onClose, onSaved, onDuplica
   }
 
   async function remove() {
-    if (!confirm(`Xóa công thức "${recipe.name}"?${used.length ? `\n${used.length} món đang dùng sẽ không còn tính phần giá vốn từ mẻ.` : ''}`)) return
+    // Món đang gắn công thức này (kể cả món đã ẩn): xóa thì các ly đã bán không trừ kho được nữa
+    if (used.length) {
+      return alert(
+        `Công thức "${recipe.name}" đang dùng cho: ${used.map((p) => p.name).join(', ')}.\nĐổi các món này sang công thức khác trước (Sản phẩm → sửa món), rồi mới xóa được.`,
+      )
+    }
+    if (!confirm(`Xóa công thức "${recipe.name}"?`)) return
     const { error } = await supabase.from('recipes').delete().eq('id', recipe.id)
     if (!showError(error)) onSaved()
   }

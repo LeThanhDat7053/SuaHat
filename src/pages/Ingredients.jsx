@@ -7,7 +7,7 @@ import { COST_MODES, altOf, costModeOf } from '../lib/units'
 import { countLoss, loadStock, loadStockCached, peekStock } from '../lib/stock'
 import { useLive } from '../lib/live'
 import { loadCatalog } from '../lib/catalog'
-import { BIG_UNIT, fmtDate, fmtQty, money, num, todayStr, unitMoney, unitPrice } from '../lib/format'
+import { BIG_UNIT, addDays, fmtDate, fmtQty, money, num, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, PageHeader, SaveButton, StatTile, useSubmit } from '../components/ui'
 import { ING_CATEGORIES, categoryOf, groupByCategory, guessCategory, plain } from '../lib/categories'
 
@@ -256,12 +256,34 @@ function CountHistory({ onChanged }) {
   })
 }
 
+const COUNT_DRAFT_KEY = 'count-draft'
+function readCountDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(COUNT_DRAFT_KEY))
+    return d && d.values && Date.now() - d.at < 12 * 3600 * 1000 ? d : null
+  } catch {
+    return null
+  }
+}
+function clearCountDraft() {
+  try {
+    localStorage.removeItem(COUNT_DRAFT_KEY)
+  } catch {
+    /* bỏ qua */
+  }
+}
+
 function StockCountForm({ ingredients, onClose, onSaved }) {
-  // số đếm = hàng còn lại cuối ngày `date` (đã trừ số bán của ngày đó)
+  // App hiểu số đếm = hàng còn lại CUỐI ngày được lưu. Kiểm lúc mở quán (chưa bán) thì lưu là cuối ngày hôm trước,
+  // nếu không, mọi ly bán trong ngày đó sẽ không bao giờ bị trừ kho.
   const [date, setDate] = useState(todayStr())
+  const [when, setWhen] = useState(() => (new Date().getHours() < 14 ? 'open' : 'close')) // 'open' = đầu ngày, 'close' = cuối ngày
+  const saveDate = when === 'open' ? addDays(date, -1) : date
   const [expected, setExpected] = useState(null)
-  const [values, setValues] = useState({})
-  const [note, setNote] = useState('')
+  // số đang gõ được giữ trong máy: lỡ đóng form / tải lại trang giữa chừng thì mở lại vẫn còn (giữ 12 tiếng)
+  const [draft] = useState(readCountDraft)
+  const [values, setValues] = useState(() => draft?.values || {})
+  const [note, setNote] = useState(() => draft?.note || '')
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [cat, setCat] = useState('all') // 'all' | 'todo' (chưa nhập) | tên nhóm
@@ -269,14 +291,32 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
 
   useEffect(() => {
     setExpected(null)
-    loadStock(date).then(
+    // sổ sách: trừ số bán tới hết ngày được lưu, cộng hàng mua tới hết ngày đang đếm (hàng về buổi sáng đã nằm trong kho)
+    loadStock(saveDate, date).then(
       (d) => setExpected(d.stock),
       (e) => showError(e),
     )
-  }, [date])
+  }, [saveDate, date])
+
+  useEffect(() => {
+    try {
+      const has = Object.values(values).some((v) => v !== '')
+      if (has || note) localStorage.setItem(COUNT_DRAFT_KEY, JSON.stringify({ values, note, at: Date.now() }))
+      else localStorage.removeItem(COUNT_DRAFT_KEY)
+    } catch {
+      /* máy chặn lưu trữ: bỏ qua */
+    }
+  }, [values, note])
 
   const isFilled = (g) => values[g.id] !== undefined && values[g.id] !== ''
   const filled = ingredients.filter(isFilled)
+  const diffOf = (g) => (isFilled(g) && expected ? toBase(values[g.id], g.unit) - expected[g.id] : null)
+  // lệch nhiều (> 20% sổ sách, ít nhất 50 g / ml hoặc 1 cái…) → hay là cân thiếu bịch / gõ nhầm kg ↔ g
+  const isBig = (g) => {
+    const d = diffOf(g)
+    return d !== null && Math.abs(d) > Math.max(Math.abs(expected[g.id]) * 0.2, BIG_UNIT[g.unit] ? 50 : 1)
+  }
+  const bigList = filled.filter(isBig)
   // lọc theo nhóm / tên: số đã gõ ở nhóm khác vẫn giữ nguyên, chỉ ẩn đi
   const q = plain(query.trim())
   const shown = ingredients.filter((g) => (!q || plain(g.name).includes(q)) && (cat === 'all' || (cat === 'todo' ? todo.has(g.id) : categoryOf(g) === cat)))
@@ -288,9 +328,13 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
   async function submit(e) {
     e.preventDefault()
     if (filled.length === 0) return alert('Chưa nhập số tồn thực tế nào')
+    if (bigList.length) {
+      const list = bigList.map((g) => `• ${g.name}: sổ ${fmtQty(expected[g.id], g.unit)}, đếm ${fmtQty(toBase(values[g.id], g.unit), g.unit)}`).join('\n')
+      if (!confirm(`Các món lệch nhiều so với sổ sách:\n${list}\n\nĐã cân / đếm lại chắc chắn chưa? OK = lưu, Hủy = xem lại.`)) return
+    }
     setBusy(true)
     const rows = filled.map((g) => ({
-      date,
+      date: saveDate,
       ingredient_id: g.id,
       counted: toBase(values[g.id], g.unit),
       expected: expected[g.id],
@@ -299,16 +343,56 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
     }))
     const { error } = await supabase.from('stock_counts').insert(rows)
     setBusy(false)
-    if (!showError(error)) onSaved()
+    if (showError(error)) return
+    clearCountDraft()
+    onSaved()
+  }
+
+  function resetDraft() {
+    if (!confirm('Xóa hết các số đã gõ để đếm lại từ đầu?')) return
+    setValues({})
+    setNote('')
+    clearCountDraft()
   }
 
   return (
     <Modal title="Kiểm kê kho" onClose={onClose}>
       <form className="form" onSubmit={submit}>
-        <Field label="Ngày kiểm kê" hint="Số đếm được là hàng còn lại cuối ngày này. Từ đó tồn kho tính lại theo đúng số này.">
+        <Field label="Ngày kiểm kê">
           <input type="date" value={date} max={todayStr()} onChange={(e) => e.target.value && setDate(e.target.value)} required />
         </Field>
+        <div className="field">
+          <span className="field-label">Kiểm lúc nào?</span>
+          <div className="mode-pick">
+            <label className={`mode-opt ${when === 'open' ? 'on' : ''}`}>
+              <input type="radio" name="count-when" checked={when === 'open'} onChange={() => setWhen('open')} />
+              <span>
+                <b>Đầu ngày — chưa bán ly nào</b>
+                <span className="muted small block">Lưu là tồn cuối ngày {fmtDate(addDays(date, -1))}. Mọi ly bán trong ngày {fmtDate(date)} vẫn bị trừ kho.</span>
+              </span>
+            </label>
+            <label className={`mode-opt ${when === 'close' ? 'on' : ''}`}>
+              <input type="radio" name="count-when" checked={when === 'close'} onChange={() => setWhen('close')} />
+              <span>
+                <b>Cuối ngày — đã bán xong</b>
+                <span className="muted small block">
+                  Số đếm đã gồm số bán ngày {fmtDate(date)}. Chỉ chọn khi đã đóng quán: ly nào ghi bán thêm cho ngày {fmtDate(date)} sau lúc này sẽ không bị trừ kho.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
         <p className="muted small">Cân / đếm hàng thực tế rồi nhập vào. Món nào không kiểm thì để trống.</p>
+        {draft && filled.length > 0 && (
+          <div className="callout count-draft">
+            <span>
+              Đang tiếp tục {filled.length} số đã gõ lúc {new Date(draft.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}.
+            </span>
+            <button type="button" className="link-btn" onClick={resetDraft}>
+              Đếm lại từ đầu
+            </button>
+          </div>
+        )}
         <div className="count-tools">
           <label className="search-box">
             <Search size={17} />
@@ -354,9 +438,10 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
               <div className="count-list">
                 {list.map((g) => {
                   const v = values[g.id]
-                  const diff = v === undefined || v === '' ? null : toBase(v, g.unit) - expected[g.id]
+                  const diff = diffOf(g)
+                  const big = isBig(g)
                   return (
-                    <div key={g.id} className="count-row">
+                    <div key={g.id} className={`count-row ${big ? 'count-row-big' : ''}`}>
                       <div className="grow">
                         <div>{g.name}</div>
                         <div className="muted small">
@@ -369,6 +454,7 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
                             </span>
                           )}
                         </div>
+                        {big && <div className="small danger-text">Lệch nhiều — cân lại cho chắc (sót bịch? nhầm kg / g?)</div>}
                       </div>
                       <div className="unit-input count-input">
                         <input
@@ -397,6 +483,13 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
             <div className="kv">
               <span>{loss >= 0 ? 'Hao hụt' : 'Dư so với sổ sách (không tính tiền)'}</span>
               <strong className={loss > 0 ? 'danger-text' : ''}>{money(Math.abs(loss))}</strong>
+            </div>
+            <div className="kv">
+              <span>Đã nhập</span>
+              <span>
+                {filled.length}/{ingredients.length} nguyên liệu
+                {bigList.length > 0 && <span className="danger-text"> · {bigList.length} món lệch nhiều</span>}
+              </span>
             </div>
           </div>
         )}

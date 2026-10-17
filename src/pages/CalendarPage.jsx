@@ -1,21 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { AlarmClock, BellOff, Candy, CandyOff, ChevronLeft, ChevronRight, Phone, Plus, StickyNote, Check, Pencil, Trash2 } from 'lucide-react'
+import { AlarmClock, BellOff, ChevronLeft, ChevronRight, Phone, Plus, Search, Star, StickyNote, Check, Pencil, Trash2, X } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
 import { deleteOrderSales, linePack, linesTotal, markOrderDone, orderItemsText, packTotals, showAt, syncOrderSales } from '../lib/orders'
-import { CHAI_DEFAULTS, PACKS, SUGARS, TEMPS, getChaiDefaults, packPrice } from '../lib/quick'
+import { CHAI_DEFAULTS, addLines, getChaiDefaults, lineKey, variantText } from '../lib/quick'
 import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
 import { ReminderField, ReminderList } from '../components/Reminders'
-import { PACK_ICON, TEMP_ICON, VariantTag } from '../components/QuickOrder'
+import { Stepper, VariantGrid, VariantTag, useVariantPick } from '../components/QuickOrder'
+import { plain } from '../lib/categories'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog } from '../lib/catalog'
 import { loadFeatured } from '../lib/featured'
 import { useLive } from '../lib/live'
-
-// Ít ngọt / không ngọt có biểu tượng riêng, ngọt vừa thì không cần
-const SUGAR_ICON = { it: Candy, khong: CandyOff }
 
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 export const STATUS = {
@@ -339,7 +337,8 @@ export function OrderForm({ order, onClose, onSaved }) {
     order_time: order.order_time ? fmtTime(order.order_time) : '',
     customer: order.customer || '',
     phone: order.phone || '',
-    lines: order.lines?.length ? order.lines : [],
+    // đơn cũ chưa ghi Ly / Chai → tính là Ly
+    lines: (order.lines || []).map((l) => ({ ...l, pack: linePack(l), qty: Math.floor(Number(l.qty) || 0) })),
     items: order.items || '',
     discount: order.discount || '',
     total: order.total ?? '',
@@ -351,6 +350,9 @@ export function OrderForm({ order, onClose, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [chaiDef, setChaiDef] = useState(CHAI_DEFAULTS)
   const [featuredIds, setFeaturedIds] = useState(new Set())
+  const [picking, setPicking] = useState(null) // món đang chọn Ly / Chai, Đá / Nóng
+  const [query, setQuery] = useState('')
+  const [priceAt, setPriceAt] = useState(null) // lineKey của dòng đang sửa giá
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   useEffect(() => {
@@ -362,15 +364,28 @@ export function OrderForm({ order, onClose, onSaved }) {
       setProducts(data)
       setFeaturedIds(featSet)
       setChaiDef(def)
-      if (!order.id && !order.lines?.length && data[0])
-        set('lines', [{ product_id: data[0].id, name: data[0].name, pack: 'ly', qty: 1, price: data[0].price }])
     })
   }, [])
 
-  const setLine = (i, patch) => set('lines', form.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
-  // đổi món / đổi Ly ↔ Chai → giá tự theo giá bán (Chai = Ly + phụ thu), vẫn sửa tay được
-  const pickLine = (i, product, pack) =>
-    setLine(i, product ? { product_id: product.id, name: product.name, pack, price: packPrice(product, pack, chaiDef) } : { pack })
+  // Món đã chọn: sửa số lượng (về 0 = bỏ) / giá từng dòng. Giá mặc định theo giá bán (Chai = Ly + phụ thu).
+  const setLineBy = (key, patch) =>
+    setForm((f) => ({ ...f, lines: f.lines.map((l) => (lineKey(l) === key ? { ...l, ...patch } : l)).filter((l) => Number(l.qty) > 0) }))
+  function addPicked(chosen) {
+    setForm((f) => ({ ...f, lines: addLines(f.lines, chosen.map(({ cost: _, ...l }) => l)) }))
+    setPicking(null)
+    setQuery('')
+  }
+  const inOrder = new Set(form.lines.map((l) => Number(l.product_id)))
+  const q = plain(query.trim())
+  // món đang bán (★ món hôm nay lên đầu) + món đã ẩn nhưng đang có trong đơn
+  const choices = products.filter((p) => (p.active || inOrder.has(p.id)) && (!q || plain(p.name).includes(q)))
+  const groups = []
+  form.lines.forEach((l) => {
+    let g = groups.find((x) => x.product_id === l.product_id)
+    if (!g) groups.push((g = { product_id: l.product_id, name: l.name, lines: [] }))
+    g.lines.push(l)
+  })
+
   const lines = form.lines.filter((l) => l.product_id && Number(l.qty) > 0)
   const hasLines = lines.length > 0
   const packs = packTotals([{ lines }])
@@ -454,104 +469,66 @@ export function OrderForm({ order, onClose, onSaved }) {
 
         <div className="field">
           <span className="field-label">Món đặt</span>
-          <span className="field-hint">Chọn món để app tự tính tiền và tự ghi doanh thu khi bấm “Đã giao”.</span>
-          <div className="recipe">
-            {form.lines.map((l, i) => (
-              <div key={i} className="order-line">
-                <select
-                  value={l.product_id}
-                  onChange={(e) => {
-                    const p = products.find((x) => String(x.id) === e.target.value)
-                    if (p) pickLine(i, p, linePack(l))
-                    else setLine(i, { product_id: '' })
-                  }}
-                >
-                  <option value="">— Chọn món —</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {featuredIds.has(p.id) ? '★ ' : ''}{p.name}
-                      {p.active ? '' : ' (đang ẩn)'}
-                    </option>
-                  ))}
-                </select>
-                <div className="pack-toggle" role="group" aria-label="Ly hay Chai">
-                  {Object.entries(PACKS).map(([pack, label]) => {
-                    const Icon = PACK_ICON[pack]
+          {groups.length > 0 && (
+            <div className="ord-lines">
+              {groups.map((g) => (
+                <div key={g.product_id} className="ord-group">
+                  <div className="ord-name">{g.name}</div>
+                  {g.lines.map((l) => {
+                    const k = lineKey(l)
                     return (
-                      <button
-                        key={pack}
-                        type="button"
-                        className={linePack(l) === pack ? 'active' : ''}
-                        aria-pressed={linePack(l) === pack}
-                        onClick={() => pickLine(i, products.find((x) => x.id === Number(l.product_id)), pack)}
-                      >
-                        <Icon size={20} aria-hidden="true" /> {label}
-                      </button>
+                      <div key={k} className="ord-line">
+                        <VariantTag pack={l.pack} temp={l.temp} sugar={l.sugar} />
+                        {priceAt === k ? (
+                          <MoneyInput value={l.price} onChange={(v) => setLineBy(k, { price: v })} onBlur={() => setPriceAt(null)} autoFocus aria-label="Đơn giá" />
+                        ) : (
+                          <button type="button" className="ord-price" onClick={() => setPriceAt(k)} title="Bấm để sửa giá">
+                            {money(l.price)} <Pencil size={12} aria-hidden="true" />
+                          </button>
+                        )}
+                        <Stepper value={Number(l.qty)} onChange={(v) => setLineBy(k, { qty: v })} label={`${l.name} ${variantText(l.pack, l.temp, l.sugar)}`} />
+                      </div>
                     )
                   })}
                 </div>
-                <div className="line-opts">
-                  <div className="pack-toggle temp-toggle" role="group" aria-label="Đá hay nóng">
-                    {Object.entries(TEMPS).map(([temp, label]) => {
-                      const Icon = TEMP_ICON[temp]
-                      return (
-                        <button
-                          key={temp}
-                          type="button"
-                          className={`opt-${temp} ${l.temp === temp ? 'active' : ''}`}
-                          aria-pressed={l.temp === temp}
-                          // bấm lại lần nữa để bỏ chọn
-                          onClick={() => setLine(i, { temp: l.temp === temp ? '' : temp })}
-                        >
-                          <Icon size={15} aria-hidden="true" /> {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div className="pack-toggle sugar-toggle" role="group" aria-label="Độ ngọt">
-                    {Object.entries(SUGARS).map(([sugar, label]) => {
-                      const Icon = SUGAR_ICON[sugar]
-                      return (
-                        <button
-                          key={sugar}
-                          type="button"
-                          className={`opt-sugar-${sugar || 'normal'} ${(l.sugar || '') === sugar ? 'active' : ''}`}
-                          aria-pressed={(l.sugar || '') === sugar}
-                          onClick={() => setLine(i, { sugar })}
-                        >
-                          {Icon && <Icon size={15} aria-hidden="true" />} {sugar ? label : 'Ngọt vừa'}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <input
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  value={l.qty}
-                  onChange={(e) => setLine(i, { qty: e.target.value })}
-                  aria-label="Số lượng"
-                />
-                <MoneyInput value={l.price} onChange={(v) => setLine(i, { price: v })} aria-label="Đơn giá" />
-                <button type="button" className="icon-btn" onClick={() => set('lines', form.lines.filter((_, idx) => idx !== i))} aria-label="Bỏ món">
-                  <Trash2 size={18} />
-                </button>
+              ))}
+              <div className="ord-sum">
+                <span>{packs.text}</span>
+                <strong>{money(sub)}</strong>
               </div>
-            ))}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => set('lines', [...form.lines, { product_id: '', name: '', pack: 'ly', qty: 1, price: '' }])}
-            >
-              <Plus size={16} /> Thêm món
-            </button>
-            {packs.text && (
-              <p className="order-packs">
-                Tổng: <strong>{packs.text}</strong>
-              </p>
-            )}
-          </div>
+            </div>
+          )}
+
+          {picking ? (
+            <InlinePick key={picking.id} product={picking} def={chaiDef} onAdd={addPicked} onCancel={() => setPicking(null)} />
+          ) : (
+            <div className="ord-choose">
+              <span className="field-hint">{groups.length ? 'Thêm món khác:' : 'Bấm vào món để chọn Ly / Chai, Đá / Nóng và độ ngọt.'}</span>
+              {products.length > 8 && (
+                <label className="search-box">
+                  <Search size={17} />
+                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm món…" aria-label="Tìm món" />
+                  {query && (
+                    <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label="Xóa tìm kiếm">
+                      <X size={16} />
+                    </button>
+                  )}
+                </label>
+              )}
+              <div className="ord-products">
+                {choices.map((p) => (
+                  <button key={p.id} type="button" className={`ord-product ${inOrder.has(p.id) ? 'in' : ''}`} onClick={() => setPicking(p)}>
+                    <span className="ord-product-name">
+                      {featuredIds.has(p.id) && <Star size={13} className="inline-icon featured-star" aria-label="Món hôm nay" />}
+                      {p.name}
+                    </span>
+                    <span className="muted small">{money(p.price)}</span>
+                  </button>
+                ))}
+                {choices.length === 0 && <span className="muted small">Không tìm thấy món nào.</span>}
+              </div>
+            </div>
+          )}
         </div>
         <Field label="Ghi chú món" hint="Thêm trân châu, ít đá…">
           <textarea rows={2} value={form.items} onChange={(e) => set('items', e.target.value)} />
@@ -565,15 +542,17 @@ export function OrderForm({ order, onClose, onSaved }) {
             <MoneyInput value={form.deposit} onChange={(v) => set('deposit', v)} />
           </Field>
         </div>
-        <Field label="Trạng thái">
-          <select value={form.status} onChange={(e) => set('status', e.target.value)}>
-            {Object.entries(STATUS).map(([k, s]) => (
-              <option key={k} value={k}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {order.id && (
+          <Field label="Trạng thái">
+            <select value={form.status} onChange={(e) => set('status', e.target.value)}>
+              {Object.entries(STATUS).map(([k, s]) => (
+                <option key={k} value={k}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Ghi chú">
           <textarea rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Địa chỉ giao…" />
         </Field>
@@ -594,6 +573,30 @@ export function OrderForm({ order, onClose, onSaved }) {
         </div>
       </form>
     </Modal>
+  )
+}
+
+// Chọn Ly / Chai × Đá / Nóng + độ ngọt cho 1 món, hiện ngay trong form đơn đặt (giống popup ở Bán hàng)
+function InlinePick({ product, def, onAdd, onCancel }) {
+  const pick = useVariantPick(product, def)
+  return (
+    <div className="ord-pick">
+      <div className="ord-pick-head">
+        <strong>{product.name}</strong>
+        <button type="button" className="icon-btn" onClick={onCancel} aria-label="Đóng">
+          <X size={18} />
+        </button>
+      </div>
+      <VariantGrid product={product} def={def} pick={pick} />
+      <div className="ord-pick-actions">
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          Hủy
+        </button>
+        <button type="button" className="btn btn-primary" disabled={pick.count === 0} onClick={() => onAdd(pick.chosen)}>
+          {pick.count > 0 ? `Thêm · ${pick.count} phần · ${money(pick.total)}` : 'Chưa chọn phần nào'}
+        </button>
+      </div>
+    </div>
   )
 }
 

@@ -1,14 +1,18 @@
 import { fetchAll, supabase } from './supabase'
 import { productUsage, toMap } from './cost'
 import { cached, peek } from './cache'
+import { missingColumn } from './quick'
 
 // Tồn kho từng nguyên liệu =
 //   số kiểm kê gần nhất (chưa kiểm kê thì tính từ 0)
-//   + nhập hàng được LƯU SAU lúc bấm lưu kiểm kê (theo thời điểm lưu, không theo ngày ghi)
-//   − lượng đã dùng SAU ngày kiểm kê (bán + tặng + hủy, nhân theo công thức)
+//   + nhập hàng được LƯU SAU lúc bấm lưu kiểm kê (theo thời điểm lưu, không theo ngày ghi),
+//     trừ phiếu đánh dấu "đã nằm trong số kiểm kê" (in_count)
+//   − lượng đã dùng SAU ngày kiểm kê (bán + tặng + hủy × lượng mỗi phần)
+// Lượng mỗi phần: lấy số đã chốt lúc bán (usage), dòng bán cũ chưa có thì tính theo công thức hiện tại.
 // Số kiểm kê = hàng còn lại CUỐI ngày kiểm kê (số bán ngày đó đã nằm trong số đếm).
-// `until`: chỉ trừ số bán đến hết ngày này (dùng khi đang kiểm kê)
-export async function loadStock(until) {
+// `until`: chỉ trừ số bán đến hết ngày này; `buyUntil`: chỉ cộng nhập hàng có ngày mua đến hết ngày này
+// (dùng khi đang kiểm kê, nhất là kiểm kê lùi ngày)
+export async function loadStock(until, buyUntil = until) {
   const [ing, prod, rec, cnt] = await Promise.all([
     supabase.from('ingredients').select('*').order('name'),
     supabase.from('products').select('*'),
@@ -24,22 +28,37 @@ export async function loadStock(until) {
   const lastCount = {}
   cnt.data.forEach((c) => (lastCount[c.ingredient_id] = c))
 
-  // chỉ cần dữ liệu từ lần kiểm kê cũ nhất trở đi
-  const counted = ing.data.map((g) => lastCount[g.id]).filter(Boolean)
-  const all = counted.length > 0 && counted.length === ing.data.length
+  // chỉ cần dữ liệu từ lần kiểm kê cũ nhất trở đi ("Nhà có" không kiểm kê nên không tính)
+  const tracked = ing.data.filter((g) => !g.no_stock)
+  const counted = tracked.map((g) => lastCount[g.id]).filter(Boolean)
+  const all = counted.length > 0 && counted.length === tracked.length
   const since = all ? counted.map((c) => c.date).sort()[0] : null
   const sinceTs = all ? counted.map((c) => c.created_at).sort()[0] : null
+  // đọc kèm cột mới của nang-cap-v8.sql, chưa chạy file đó thì đọc như cũ
+  const withV8 = async (build, cols, extra) => {
+    const r = await fetchAll(() => build(`${cols},${extra}`))
+    return missingColumn(r.error) ? fetchAll(() => build(cols)) : r
+  }
   const q = (table, cols) =>
-    fetchAll(() => {
-      let b = supabase.from(table).select(cols).order('id')
-      if (until) b = b.lte('date', until)
-      return since ? b.gt('date', since) : b
-    })
+    withV8(
+      (c) => {
+        let b = supabase.from(table).select(c).order('id')
+        if (until) b = b.lte('date', until)
+        return since ? b.gt('date', since) : b
+      },
+      cols,
+      'usage',
+    )
   const [pur, sal, wst] = await Promise.all([
-    fetchAll(() => {
-      const b = supabase.from('purchases').select('ingredient_id,quantity,created_at').order('id')
-      return sinceTs ? b.gt('created_at', sinceTs) : b
-    }),
+    withV8(
+      (c) => {
+        let b = supabase.from('purchases').select(c).order('id')
+        if (buyUntil) b = b.lte('date', buyUntil)
+        return sinceTs ? b.gt('created_at', sinceTs) : b
+      },
+      'ingredient_id,quantity,created_at',
+      'in_count',
+    ),
     q('sales', 'product_id,date,quantity,gift_qty'),
     q('waste', 'product_id,date,quantity'),
   ])
@@ -50,7 +69,7 @@ export async function loadStock(until) {
   const counts = (id, date) => id in stock && (!lastCount[id] || date > lastCount[id].date)
   const boughtAfter = (id, ts) => id in stock && (!lastCount[id] || ts > lastCount[id].created_at)
 
-  pur.data.forEach((p) => boughtAfter(p.ingredient_id, p.created_at) && (stock[p.ingredient_id] += Number(p.quantity)))
+  pur.data.forEach((p) => !p.in_count && boughtAfter(p.ingredient_id, p.created_at) && (stock[p.ingredient_id] += Number(p.quantity)))
 
   const prodMap = toMap(prod.data)
   const recMap = toMap(rec.data)
@@ -58,10 +77,14 @@ export async function loadStock(until) {
   // "Nhà có / không tính kho": không trừ khi bán
   const noStock = new Set(ing.data.filter((g) => g.no_stock).map((g) => g.id))
   const use = (row, n) => {
-    const product = prodMap[row.product_id]
-    if (!product || !n) return
-    const usage = (usageCache[product.id] ||= productUsage(product, recMap))
-    for (const [id, amount] of Object.entries(usage)) if (counts(id, row.date) && !noStock.has(Number(id))) stock[id] -= amount * n
+    if (!n) return
+    let usage = row.usage
+    if (usage == null) {
+      const product = prodMap[row.product_id]
+      if (!product) return
+      usage = usageCache[product.id] ||= productUsage(product, recMap)
+    }
+    for (const [id, amount] of Object.entries(usage)) if (counts(id, row.date) && !noStock.has(Number(id))) stock[id] -= Number(amount) * n
   }
   sal.data.forEach((r) => use(r, r.quantity + (r.gift_qty || 0)))
   wst.data.forEach((r) => use(r, r.quantity))

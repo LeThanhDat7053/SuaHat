@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { ChevronRight, Coffee, LogOut } from 'lucide-react'
-import { logout, navFor, toggleBarista } from '../components/Layout'
+import { ChevronRight, Coffee, LogOut, Moon } from 'lucide-react'
+import { ThemePick, logout, navFor, toggleBarista } from '../components/Layout'
 import { useBarista } from '../lib/barista'
 import { PageHeader } from '../components/ui'
 
@@ -27,6 +27,11 @@ export default function More() {
           </span>
           <ChevronRight size={18} className="muted" />
         </button>
+        <div className="list-row">
+          <Moon size={20} />
+          <span className="grow">Giao diện</span>
+          <ThemePick />
+        </div>
         <button className="list-row list-link danger-text" onClick={logout}>
           <LogOut size={20} />
           <span className="grow">Đăng xuất</span>
