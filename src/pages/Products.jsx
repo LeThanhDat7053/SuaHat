@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Copy, CupSoda, FlaskConical, Plus, Star, Trash2 } from 'lucide-react'
+import { Copy, CupSoda, FlaskConical, Plus, Search, Star, Trash2, X } from 'lucide-react'
 import { getSetting, setSetting, showError, supabase } from '../lib/supabase'
 import { BIG_UNIT, fmtQty, money, num } from '../lib/format'
-import { DEFAULT_MARGIN, batchCost, productCost, toMap, unitCost } from '../lib/cost'
+import { DEFAULT_MARGIN, batchCost, productCost, productSources, productUsage, toMap, unitCost } from '../lib/cost'
 import { CHAI_DEFAULTS, getChaiDefaults } from '../lib/quick'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
 import { peek } from '../lib/cache'
 import { FEATURED_KEY, loadFeatured } from '../lib/featured'
 import { useLive } from '../lib/live'
-import { costModeOf, recipeUnits } from '../lib/units'
+import { plain } from '../lib/categories'
+import { altText, costModeOf, recipeUnits } from '../lib/units'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton } from '../components/ui'
 
 export { DEFAULT_MARGIN }
@@ -27,6 +28,7 @@ export default function Products() {
   const [editRecipe, setEditRecipe] = useState(null)
   const [margin, setMargin] = useState(DEFAULT_MARGIN)
   const [featured, setFeatured] = useState(() => peek(FEATURED_KEY) || []) // "Món hôm nay" chọn ở trang Bán hàng
+  const [query, setQuery] = useState('')
 
   function load() {
     loadCatalog(0).then((c) => setData(sortProducts(c)), showError)
@@ -52,8 +54,33 @@ export default function Products() {
   // Món hôm nay (tô vàng + sao) lên đầu, giống trang Bán hàng; mẻ dùng cho món hôm nay cũng vậy
   const star = new Set(featured)
   const hotRecipe = new Set(products.filter((p) => star.has(p.id)).map((p) => p.recipe_id))
-  const productList = [...products].sort((a, b) => star.has(b.id) - star.has(a.id))
-  const recipeList = [...recipes].sort((a, b) => hotRecipe.has(b.id) - hotRecipe.has(a.id))
+  // Tìm không dấu theo tên món, tên công thức mẻ, tên nguyên liệu ("hat dieu" khớp "Hạt điều")
+  const q = plain(query.trim())
+  const hit = (...names) => !q || names.some((n) => plain(n).includes(q))
+  const ingNames = (list) => (Array.isArray(list) ? list : []).map((r) => ingMap[r.ingredient_id]?.name)
+  const productList = [...products]
+    .filter((p) => hit(p.name, recMap[p.recipe_id]?.name, ...Object.keys(productUsage(p, recMap)).map((id) => ingMap[id]?.name)))
+    .sort((a, b) => star.has(b.id) - star.has(a.id))
+  const recipeList = [...recipes]
+    .filter((r) => hit(r.name, ...ingNames(r.items), ...products.filter((p) => p.recipe_id === r.id).map((p) => p.name)))
+    .sort((a, b) => hotRecipe.has(b.id) - hotRecipe.has(a.id))
+  const searchBox = (
+    <label className="search-box list-search">
+      <Search size={17} />
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={tab === 'mon' ? 'Tìm món, công thức, nguyên liệu…' : 'Tìm công thức mẻ, nguyên liệu, món…'}
+        aria-label="Tìm kiếm"
+      />
+      {query && (
+        <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label="Xóa tìm kiếm">
+          <X size={16} />
+        </button>
+      )}
+    </label>
+  )
+  const noHit = <p className="muted" style={{ padding: '12px 4px' }}>Không tìm thấy “{query.trim()}”.</p>
   const Hot = () => <Star size={15} className="inline-icon featured-star" aria-label="Món hôm nay" />
 
   return (
@@ -96,8 +123,11 @@ export default function Products() {
               % giá bán
             </label>
           </div>
+          {products.length > 0 && searchBox}
           {products.length === 0 ? (
             <Empty icon={CupSoda}>Chưa có món nào. Nên tạo “Công thức mẻ” trước, rồi bấm “Thêm món”.</Empty>
+          ) : productList.length === 0 ? (
+            noHit
           ) : (
             <div className="card-grid">
               {productList.map((p) => {
@@ -105,6 +135,7 @@ export default function Products() {
                 const profit = p.price - cost
                 const pct = p.price > 0 ? (profit / p.price) * 100 : 0
                 const low = pct < Number(margin)
+                const src = productSources(p, ingMap, recMap)
                 return (
                   <button key={p.id} className={`card product-card ${p.active ? '' : 'inactive'} ${star.has(p.id) ? 'hot' : ''}`} onClick={() => setEditing(p)}>
                     <div className="product-card-head">
@@ -127,6 +158,7 @@ export default function Products() {
                       <span>Giá vốn</span>
                       <span>{money(cost)}</span>
                     </div>
+                    <SourceLines src={src} />
                     <div className="kv">
                       <span>Lãi / phần</span>
                       <strong className={profit < 0 || low ? 'danger-text' : 'good-text'}>
@@ -144,6 +176,9 @@ export default function Products() {
           Chưa có công thức. Ghi lại 1 mẻ nấu thực tế: bao nhiêu hạt, nước, đường… và ra được bao nhiêu ml.
         </Empty>
       ) : (
+        <>
+        {searchBox}
+        {recipeList.length === 0 && noHit}
         <div className="card-grid">
           {recipeList.map((r) => {
             const cost = batchCost(r, ingMap)
@@ -175,6 +210,7 @@ export default function Products() {
             )
           })}
         </div>
+        </>
       )}
 
       {editing && (
@@ -192,6 +228,29 @@ export default function Products() {
         />
       )}
     </>
+  )
+}
+
+// Nguyên liệu không nằm trong giá vốn mỗi ly: "Tính lúc mua" (đã trừ lãi ngày mua) và "Nhà có"
+function SourceLines({ src }) {
+  if (!src.buy.names.length && !src.free.names.length) return null
+  return (
+    <div className="src-lines">
+      {src.buy.names.length > 0 && (
+        <div className="src-line" title="Tiền đã trừ vào lãi ngày mua, không cộng vào giá vốn">
+          <span className="badge badge-warn">Tính lúc mua</span>
+          <span className="clamp">{src.buy.names.join(', ')}</span>
+          {src.buy.value > 0 && <span className="src-val">≈ {money(src.buy.value)}</span>}
+        </div>
+      )}
+      {src.free.names.length > 0 && (
+        <div className="src-line" title="Nhà có, không tính tiền">
+          <span className="badge badge-good">Nhà có</span>
+          <span className="clamp">{src.free.names.join(', ')}</span>
+          <span className="src-val">0đ</span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -250,6 +309,37 @@ const cleanItems = (rows) =>
   rows
     .filter((r) => r.ingredient_id && Number(r.amount) > 0)
     .map((r) => ({ ingredient_id: Number(r.ingredient_id), amount: Number(r.amount) }))
+
+// Size hay bán, bấm là điền dung tích; size khác vẫn gõ tay được
+const SIZES = [250, 300, 350, 500, 600]
+
+// Lượng từng nguyên liệu lấy từ mẻ cho 1 phần, tự tính lại khi đổi dung tích (250 → 300 ml…)
+function PortionList({ batch, volume, ingMap }) {
+  const rows = (batch.items || []).filter((r) => Number(r.amount) > 0)
+  if (rows.length === 0) return null
+  const k = volume / batch.yield_ml
+  return (
+    <div className="portion-box">
+      <div className="portion-head">
+        Lượng cho 1 phần <b>{num(volume)} ml</b>
+        <span className="muted small"> · 1 mẻ {num(batch.yield_ml)} ml ≈ {num(batch.yield_ml / volume, 1)} phần</span>
+      </div>
+      {rows.map((r, i) => {
+        const g = ingMap[r.ingredient_id]
+        const amount = Number(r.amount) * k
+        const alt = altText(amount, g)
+        return (
+          <div key={i} className="kv">
+            <span>{g?.name || '(nguyên liệu đã xóa)'}</span>
+            <span className="num">
+              {alt ? `${alt} (${num(amount, 1)} ${g.unit})` : `${num(amount, 1)} ${g?.unit || ''}`}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -340,6 +430,16 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
             </div>
           </Field>
         </div>
+        {batch && (
+          <div className="chips size-chips" role="group" aria-label="Chọn nhanh dung tích">
+            {SIZES.map((v) => (
+              <button key={v} type="button" className={`chip ${draft.volume_ml === v ? 'active' : ''}`} onClick={() => set('volume_ml', v)}>
+                {v} ml
+              </button>
+            ))}
+          </div>
+        )}
+        {batch?.yield_ml > 0 && draft.volume_ml > 0 && <PortionList batch={batch} volume={draft.volume_ml} ingMap={ingMap} />}
         {recipes.length === 0 && (
           <p className="field-hint">Chưa có công thức mẻ. Tạo ở tab “Công thức mẻ”, hoặc ghi nguyên liệu cho 1 phần ở dưới.</p>
         )}
@@ -380,6 +480,7 @@ function ProductForm({ product, ingredients, recipes, margin, onClose, onSaved }
             <span>Giá vốn / phần (Ly)</span>
             <strong>{money(cost)}</strong>
           </div>
+          <SourceLines src={productSources(draft, ingMap, recMap)} />
           <div className="kv">
             <span>Lãi / phần</span>
             <strong className={profit < 0 || pct < margin ? 'danger-text' : 'good-text'}>
@@ -437,9 +538,11 @@ function fromGrid(grid, ingredients) {
 
 function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
   const ingMap = toMap(ingredients)
+  const [query, setQuery] = useState('')
   // món đang dùng lên đầu, rồi hạt / sữa (g, ml), cuối cùng chai / hộp…
   const rank = (g) => (firstIds.has(g.id) ? 0 : BIG_UNIT[g.unit] ? 1 : 2)
-  const list = [...ingredients].sort((a, b) => rank(a) - rank(b))
+  const q = plain(query.trim())
+  const list = [...ingredients].filter((g) => !q || plain(g.name).includes(q)).sort((a, b) => rank(a) - rank(b))
   const set = (id, patch) => {
     const g = ingMap[id]
     const cur = grid[id] || { value: '', unit: recipeUnits(g)[0].unit }
@@ -453,7 +556,23 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
     )
   }
   return (
+    <>
+    {ingredients.length > 6 && (
+      <div className="search-box">
+        <Search size={17} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm nguyên liệu…"
+          aria-label="Tìm nguyên liệu"
+          onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} // Enter không lưu form
+        />
+        {query && (
+          <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label="Xóa tìm kiếm">
+            <X size={16} />
+          </button>
+        )}
+      </div>
+    )}
     <div className="count-list">
+      {list.length === 0 && <p className="muted small" style={{ padding: '10px 12px' }}>Không có nguyên liệu “{query.trim()}”.</p>}
       {list.map((g) => {
         const units = recipeUnits(g)
         const cell = grid[g.id] || { value: '', unit: units[0].unit }
@@ -494,6 +613,7 @@ function IngredientGrid({ grid, onChange, ingredients, firstIds }) {
         )
       })}
     </div>
+    </>
   )
 }
 

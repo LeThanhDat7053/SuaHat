@@ -18,12 +18,20 @@ export function Modal({ title, onClose, children }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // Khóa cuộn trang nền. Điện thoại bật bàn phím khi gõ trong form hay tự đẩy trang xuống →
+  // nhớ chỗ đang xem lúc mở, đóng (lưu / hủy) thì trả về đúng chỗ đó.
+  useEffect(() => {
+    const y = window.scrollY
     document.body.style.overflow = 'hidden'
     return () => {
-      window.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
+      window.scrollTo(0, y)
+      requestAnimationFrame(() => window.scrollTo(0, y))
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

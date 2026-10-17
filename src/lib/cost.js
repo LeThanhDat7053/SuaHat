@@ -35,6 +35,23 @@ export function productCost(product, ingMap, recipeMap = {}) {
   return Number(product.extra_cost || 0) + ing
 }
 
+// Nguồn gốc nguyên liệu của 1 phần, để hiện rõ phần nào không nằm trong giá vốn:
+//   buy  = "Tính 1 lần lúc mua": tiền đã trừ vào lãi ngày mua (value = ước tính theo giá bình quân)
+//   free = "Nhà có": không tính tiền
+export function productSources(product, ingMap, recipeMap = {}) {
+  const out = { buy: { value: 0, names: [] }, free: { names: [] } }
+  Object.entries(productUsage(product, recipeMap)).forEach(([id, amount]) => {
+    const g = ingMap[id]
+    if (!g) return
+    if (g.no_stock) out.free.names.push(g.name)
+    else if (g.cost_on_buy) {
+      out.buy.names.push(g.name)
+      out.buy.value += amount * Number(g.price_per_unit || 0)
+    }
+  })
+  return out
+}
+
 // Giá bình quân sau khi nhập thêm: (tồn × giá cũ + tiền mua mới) / (tồn + lượng mua mới)
 export function avgPrice(stock, oldPrice, quantity, total) {
   const s = Math.max(0, Number(stock) || 0)
