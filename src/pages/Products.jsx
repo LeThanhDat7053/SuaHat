@@ -358,7 +358,7 @@ const cleanItems = (rows) =>
     .map((r) => ({ ingredient_id: Number(r.ingredient_id), amount: Number(r.amount) }))
 
 // Size hay bán, bấm là điền dung tích; size khác vẫn gõ tay được
-const SIZES = [250, 300, 350, 500, 600]
+const SIZES = [250, 270, 300, 350, 500, 600]
 
 // Lượng từng nguyên liệu lấy từ mẻ cho 1 phần, tự tính lại khi đổi dung tích (250 → 300 ml…)
 function PortionList({ batch, volume, ingMap }) {

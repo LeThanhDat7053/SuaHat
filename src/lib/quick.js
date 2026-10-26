@@ -1,4 +1,5 @@
-import { getSetting, supabase } from './supabase'
+import { getSettingStrict, supabase } from './supabase'
+import { withKept } from './keep'
 import { cached } from './cache'
 import { toMap, usageSnapshot } from './cost'
 import { loadCatalog } from './catalog'
@@ -24,8 +25,13 @@ export const missingTable = (e) => e && (e.code === 'PGRST205' || e.code === '42
 // Chưa chạy file nâng cấp có cột mới
 export const missingColumn = (e) => e && (e.code === 'PGRST204' || e.code === '42703')
 
+// Mất mạng thì dùng mức đã lưu trong máy (để giá Chai lúc mất mạng vẫn đúng như đã cài)
 export const getChaiDefaults = () =>
-  cached('chai-defaults', async () => ({ ...CHAI_DEFAULTS, ...((await getSetting('chai', null)) || {}) }), 300000)
+  cached(
+    'chai-defaults',
+    () => withKept('chai', async () => ({ ...CHAI_DEFAULTS, ...((await getSettingStrict('chai', null)) || {}) })).catch(() => ({ ...CHAI_DEFAULTS })),
+    300000,
+  )
 
 const has = (v) => v !== null && v !== undefined && v !== ''
 
@@ -72,7 +78,10 @@ export function variantsText(lines) {
 // Đơn đã giao → ghi vào bán hàng (1 dòng cho mỗi món + loại + đá/nóng), làm trong 1 giao dịch ở database.
 // Tên món chỉ ghi Ly / Chai để báo cáo không bị tách theo đá / nóng / độ ngọt; các lựa chọn này nằm trong source.
 // Kèm lượng nguyên liệu mỗi phần (usage) chốt lúc giao; database chưa chạy nang-cap-v8 thì hàm tự bỏ qua cột này.
-export async function completeQuickOrder(order) {
+// `id`: số đơn ghi vào source; đơn lập lúc mất mạng chưa có số → ghi QUICK_ID, database tự thay khi lưu.
+export const QUICK_ID = '{id}'
+
+export async function quickRows(order, id = order.id) {
   let usageOf = () => null
   try {
     const c = await loadCatalog()
@@ -82,22 +91,29 @@ export async function completeQuickOrder(order) {
   } catch {
     /* mất mạng lúc tải công thức: vẫn ghi đơn, kho tính theo công thức hiện tại */
   }
-  const rows = order.lines
+  return order.lines
     .filter((l) => l.qty > 0)
     .map((l) => ({
       date: order.date,
       product_id: l.product_id,
       product_name: `${l.name} (${PACKS[l.pack]})`,
-      source: `quick:${order.id}:${l.pack}${l.temp ? `:${l.temp}` : ''}${l.sugar ? `:s-${l.sugar}` : ''}`,
+      source: `quick:${id}:${l.pack}${l.temp ? `:${l.temp}` : ''}${l.sugar ? `:s-${l.sugar}` : ''}`,
       pack: l.pack,
       quantity: l.qty,
       unit_price: l.price,
       unit_cost: l.cost,
       usage: usageOf(l.product_id),
+      ...(order.wholesale ? { wholesale: true } : {}),
     }))
-  const { error } = await supabase.rpc('complete_quick_order', { p_id: order.id, p_rows: rows })
+}
+
+export async function completeQuickOrder(order) {
+  const { error } = await supabase.rpc('complete_quick_order', { p_id: order.id, p_rows: await quickRows(order) })
   return error
 }
+
+// Chưa chạy nang-cap-v9.sql mà đánh dấu bán sỉ → báo cách nâng cấp
+export const WHOLESALE_UPGRADE = 'Cần chạy file supabase/nang-cap-v9.sql trong Supabase → SQL Editor 1 lần để dùng "Bán sỉ".'
 
 export async function reopenQuickOrder(order) {
   const { error } = await supabase.rpc('reopen_quick_order', { p_id: order.id })

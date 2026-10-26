@@ -91,6 +91,7 @@ export async function syncOrderSales(order) {
       unit_cost: product ? packCost(product, g.pack, lyCost, chaiDef) : 0,
       discount: idx === 0 ? Number(order.discount || 0) : 0, // giảm giá cả đơn ghi vào dòng đầu
       usage: usageSnapshot(product, recMap),
+      ...(order.wholesale ? { wholesale: true } : {}),
     }
   })
   const ins = await withUsage((r) => supabase.from('sales').insert(r), rows)

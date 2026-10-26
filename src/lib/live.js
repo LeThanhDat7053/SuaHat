@@ -33,6 +33,9 @@ function changed(table) {
   }, 250)
 }
 
+// Báo các trang đang mở là bảng `tables` vừa đổi (vd hàng chờ vừa gửi xong đơn lưu lúc mất mạng)
+export const notifyChange = (tables) => tables.forEach(changed)
+
 export function startLive() {
   if (started || !supabase) return
   started = true

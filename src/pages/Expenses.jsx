@@ -87,7 +87,7 @@ export default function Expenses() {
             <b>Lãi gộp</b> (trang Bán hàng) = Doanh thu − Giá vốn nguyên liệu − Hàng hủy. <i>Chưa trừ</i> chi phí khác.
           </p>
           <p>
-            <b>Lãi</b> (trang Tổng quan) = Lãi gộp − Hao hụt kiểm kê − <b>Chi phí khác</b>. Đây là số lời / lỗ thật của quán.
+            <b>Lãi ròng</b> (trang Tổng quan) = Lãi gộp − Hao hụt kiểm kê − <b>Chi phí khác</b>. Đây là số lời / lỗ thật của quán.
           </p>
           <p>
             <b>Tiền còn lại</b> (Tổng quan) = Doanh thu − Tiền nhập hàng − <b>Chi phí khác</b>: tiền mặt thực sự còn trong tay.
@@ -101,7 +101,7 @@ export default function Expenses() {
           </p>
           <p>
             Nguyên liệu đặt <b>Tính 1 lần lúc mua</b> (sữa đặc, đường…, chỉnh ở trang Nguyên liệu): tiền nhập hàng của nó cũng trừ thẳng vào{' '}
-            <b>Lãi</b> ngày mua, giống chi phí khác, nhưng vẫn theo dõi kho và báo sắp hết.
+            <b>Lãi ròng</b> ngày mua, giống chi phí khác, nhưng vẫn theo dõi kho và báo sắp hết.
           </p>
           <p className="muted small">
             Lưu ý: bao bì (chai, nắp, ly…) đã có trong công thức món thì không ghi thêm ở đây, kẻo bị trừ 2 lần.

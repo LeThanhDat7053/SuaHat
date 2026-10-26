@@ -94,6 +94,23 @@ App sẽ mở toàn màn hình như app bình thường và tự cập nhật kh
 - **Điểm hòa vốn** = cần bán bao nhiêu phần mỗi ngày để lãi gộp đủ bù chi phí khác.
 - **Giá nguyên liệu bình quân**: còn 1 kg giá 280k, mua thêm 2 kg giá 290k → giá mới = (280k + 580k) / 3 kg ≈ 287k/kg.
 
+## Nâng cấp database
+
+Mỗi file `supabase/nang-cap-vN.sql` chạy 1 lần (Supabase → SQL Editor → dán → **Run**), chạy lại cũng không sao.
+Trang **Kiểm tra số liệu** trong app tự báo nếu còn thiếu file nào.
+
+- `nang-cap-v10.sql`: **bán hàng khi mất mạng**. Lập đơn / Xong luôn / Đã xong / tặng / giảm / hủy lúc mất mạng được lưu trong máy và tự gửi khi có mạng; mỗi đơn có mã riêng nên gửi lại không bao giờ ghi trùng.
+
+## Test tự động
+
+```
+npm test
+```
+
+Chạy ~110 bài kiểm tra các phép tính: giá vốn, giá bình quân, doanh thu, lãi gộp / lãi ròng / tiền còn lại / hòa vốn, tồn kho, kỳ so sánh,
+hàng chờ lúc mất mạng (không mất, không trùng, đúng thứ tự), trang Kiểm tra số liệu, và chạy thật các file SQL trên Postgres trong máy (PGlite).
+Số mong đợi trong test được tính tay, không lấy từ code. Sửa công thức tính tiền thì chạy `npm test` trước khi đưa lên.
+
 ## Lưu ý về gói miễn phí
 
 - Supabase free sẽ **tạm dừng project nếu 7 ngày liền không ai dùng**. Quán dùng mỗi ngày thì không sao; nếu bị dừng, vào supabase.com bấm **Restore** là dữ liệu vẫn còn.
@@ -108,6 +125,9 @@ src/
   lib/supabase.js      kết nối Supabase
   lib/cost.js          giá vốn (mẻ, dung tích), giá bình quân
   lib/stock.js         tính tồn kho
+  lib/report.js        lãi gộp, lãi ròng, tiền còn lại, kỳ so sánh (trang Tổng quan)
+  lib/outbox.js        hàng chờ gửi: bán hàng lúc mất mạng
+  lib/checks.js        Kiểm tra số liệu
   lib/orders.js        đơn đặt → doanh thu
   lib/xlsx.js          xuất Excel
   lib/format.js        định dạng tiền, ngày
@@ -115,5 +135,7 @@ src/
   pages/               Dashboard, Sales, CalendarPage, Purchases, Ingredients, Products, Expenses
 supabase/schema.sql    cấu trúc database
 supabase/nang-cap-v2.sql  nâng cấp database (mẻ, tồn kho, hủy, chốt tiền…)
+supabase/nang-cap-v10.sql bán hàng khi mất mạng (không ghi trùng)
+tests/                 test tự động (npm test)
 public/                logo.png + icon cài app (tạo từ logo gốc)
 ```

@@ -291,7 +291,7 @@ function groupLines(lines) {
 
 const hm = (ts) => (ts ? new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '')
 
-export const orderLabel = (o) => o.note || `Đơn #${o.id}`
+export const orderLabel = (o) => o.note || (o.local ? 'Đơn mới' : `Đơn #${o.id}`)
 
 // Thẻ đơn: vàng = đang chờ giao, xanh nhạt = đã xong (ở trang xem đơn)
 export function OrderCard({ order, busy, editing, showProfit, onDone, onEdit, onDelete, onReopen }) {
@@ -299,9 +299,16 @@ export function OrderCard({ order, busy, editing, showProfit, onDone, onEdit, on
   return (
     <div className={`qorder ${done ? 'done' : ''} ${editing ? 'editing' : ''}`}>
       <div className="qorder-head">
-        <strong className="clamp">{orderLabel(order)}</strong>
+        <strong className="clamp">
+          {order.wholesale && <span className="badge badge-ws">Sỉ</span>} {orderLabel(order)}
+        </strong>
         <span className="muted small">{done ? `xong ${hm(order.done_at)}` : hm(order.created_at)}</span>
       </div>
+      {order.local && (
+        <div className={`qorder-unsent ${order.failed ? 'failed' : ''}`}>
+          {order.failed ? `Chưa gửi được: ${order.failed}` : 'Chưa gửi lên (mất mạng) · có mạng sẽ tự gửi'}
+        </div>
+      )}
       <div className="qorder-lines">
         {groupLines(order.lines).map((g) => (
           <div key={g.product_id} className="qorder-line">
@@ -358,7 +365,9 @@ export function PreOrderCard({ order, busy, onDone, onEdit }) {
   return (
     <div className="qorder preorder">
       <div className="qorder-head">
-        <strong className="clamp">{order.customer}</strong>
+        <strong className="clamp">
+          {order.wholesale && <span className="badge badge-ws">Sỉ</span>} {order.customer}
+        </strong>
         <span className="preorder-badge">
           <CalendarClock size={13} /> Đặt trước
         </span>
@@ -422,6 +431,7 @@ export function DraftPanel({ draft, onChange, onSubmit, onCancel, busy }) {
   const total = linesTotal(lines)
   const count = lines.reduce((s, l) => s + l.qty, 0)
   const setQty = (i, qty) => onChange({ ...draft, lines: lines.map((l, idx) => (idx === i ? { ...l, qty } : l)).filter((l) => l.qty > 0) })
+  const setPrice = (i, price) => onChange({ ...draft, lines: lines.map((l, idx) => (idx === i ? { ...l, price: Number(price || 0) } : l)) })
 
   return (
     <div className="draft-panel" role="region" aria-label="Đơn đang lập">
@@ -434,8 +444,14 @@ export function DraftPanel({ draft, onChange, onSubmit, onCancel, busy }) {
               <div key={lineKey(l)} className="draft-line">
                 <span className="grow">
                   {l.name} <VariantTag pack={l.pack} temp={l.temp} sugar={l.sugar} />
-                  <span className="muted small"> · {money(l.price)}</span>
+                  {!draft.wholesale && <span className="muted small"> · {money(l.price)}</span>}
                 </span>
+                {/* bán sỉ thường giá thấp hơn: sửa giá từng dòng */}
+                {draft.wholesale && (
+                  <div className="draft-price">
+                    <MoneyInput value={l.price} onChange={(v) => setPrice(i, v)} aria-label={`Giá sỉ ${l.name}`} />
+                  </div>
+                )}
                 <Stepper value={l.qty} onChange={(v) => setQty(i, v)} label={`${l.name} ${variantText(l.pack, l.temp, l.sugar)}`} />
               </div>
             ))
@@ -451,10 +467,24 @@ export function DraftPanel({ draft, onChange, onSubmit, onCancel, busy }) {
           aria-label="Tên khách"
           enterKeyHint="done"
         />
+        <label className={`ws-toggle ${draft.wholesale ? 'on' : ''}`} title="Vẫn tính doanh thu và trừ kho, nhưng không cộng vào số phần đã bán">
+          <input
+            type="checkbox"
+            checked={!!draft.wholesale}
+            onChange={(e) => {
+              onChange({ ...draft, wholesale: e.target.checked })
+              if (e.target.checked) setOpen(true) // mở danh sách để sửa giá sỉ
+            }}
+          />
+          Bán sỉ
+        </label>
       </div>
       <div className="draft-bar">
         <button type="button" className="draft-sum" onClick={() => setOpen(!open)} aria-expanded={open}>
-          <span className="small">{draft.editingId ? `Sửa đơn #${draft.editingId}` : 'Đang lập đơn'} · {count} phần {open ? '▾' : '▴'}</span>
+          <span className="small">
+            {draft.local ? 'Sửa đơn chưa gửi' : draft.editingId ? `Sửa đơn #${draft.editingId}` : 'Đang lập đơn'}
+            {draft.wholesale && ' sỉ'} · {count} phần {open ? '▾' : '▴'}
+          </span>
           <strong>{money(total)}</strong>
         </button>
         <button type="button" className="icon-btn draft-cancel" onClick={onCancel} disabled={busy} aria-label="Bỏ đơn đang lập">

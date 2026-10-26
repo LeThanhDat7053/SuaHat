@@ -286,7 +286,7 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
   const [note, setNote] = useState(() => draft?.note || '')
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
-  const [cat, setCat] = useState('all') // 'all' | 'todo' (chưa nhập) | tên nhóm
+  const [cat, setCat] = useState('all') // 'all' | 'todo' (chưa nhập) | 'big' (lệch nhiều) | tên nhóm
   const [todo, setTodo] = useState(() => new Set()) // "Chưa nhập": chốt danh sách lúc bấm, gõ số xong không bị mất dòng
 
   useEffect(() => {
@@ -317,20 +317,47 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
     return d !== null && Math.abs(d) > Math.max(Math.abs(expected[g.id]) * 0.2, BIG_UNIT[g.unit] ? 50 : 1)
   }
   const bigList = filled.filter(isBig)
+  // tiền hụt của 1 món (chỉ tính phần thiếu, giống báo cáo). "Tính lúc mua" đã trừ tiền khi nhập nên = 0
+  const priceOf = (g) => (g.cost_on_buy ? 0 : Number(g.price_per_unit || 0))
+  const lossOf = (g) => Math.max(0, -(diffOf(g) || 0)) * priceOf(g)
+  // gõ nhầm g ↔ kg (ml ↔ lít): số đếm gấp / bằng 1 phần ~1000 lần sổ sách → gợi ý số đã đổi đơn vị
+  const slipOf = (g) => {
+    if (!BIG_UNIT[g.unit] || !isFilled(g) || !expected) return null
+    const v = Number(values[g.id])
+    if (!(v > 0) || !(expected[g.id] > 0)) return null
+    const r = toBase(v, g.unit) / expected[g.id]
+    if (r >= 300) return String(+(v / 1000).toFixed(6))
+    if (r <= 1 / 300) return String(+(v * 1000).toFixed(3))
+    return null
+  }
+  const bookOf = (g) => String(+fromBase(Math.max(0, expected[g.id]), g.unit).toFixed(3))
+  const setValue = (g, v) => setValues((s) => ({ ...s, [g.id]: v }))
+  // Enter = sang ô kế tiếp (đỡ lỡ tay lưu khi đang gõ dở)
+  function nextInput(e) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const all = [...e.currentTarget.form.querySelectorAll('.count-input input')]
+    const next = all[all.indexOf(e.currentTarget) + 1]
+    if (next) next.focus()
+    else e.currentTarget.blur()
+  }
   // lọc theo nhóm / tên: số đã gõ ở nhóm khác vẫn giữ nguyên, chỉ ẩn đi
   const q = plain(query.trim())
-  const shown = ingredients.filter((g) => (!q || plain(g.name).includes(q)) && (cat === 'all' || (cat === 'todo' ? todo.has(g.id) : categoryOf(g) === cat)))
+  const shown = ingredients.filter((g) => (!q || plain(g.name).includes(q)) && (cat === 'all' || (cat === 'todo' ? todo.has(g.id) : cat === 'big' ? isBig(g) : categoryOf(g) === cat)))
   const allGroups = groupByCategory(ingredients)
-  const loss = expected
-    ? filled.reduce((s, g) => s + (expected[g.id] - toBase(values[g.id], g.unit)) * (g.cost_on_buy ? 0 : g.price_per_unit), 0)
-    : 0
+  // giống báo cáo: món hụt bị trừ tiền, món dư không cộng lại
+  const loss = expected ? filled.reduce((s, g) => s + lossOf(g), 0) : 0
+  const surplus = expected ? filled.filter((g) => diffOf(g) > 1e-9).length : 0
 
   async function submit(e) {
     e.preventDefault()
     if (filled.length === 0) return alert('Chưa nhập số tồn thực tế nào')
     if (bigList.length) {
-      const list = bigList.map((g) => `• ${g.name}: sổ ${fmtQty(expected[g.id], g.unit)}, đếm ${fmtQty(toBase(values[g.id], g.unit), g.unit)}`).join('\n')
-      if (!confirm(`Các món lệch nhiều so với sổ sách:\n${list}\n\nĐã cân / đếm lại chắc chắn chưa? OK = lưu, Hủy = xem lại.`)) return
+      const list = bigList
+        .map((g) => `• ${g.name}: sổ ${fmtQty(expected[g.id], g.unit)}, đếm ${fmtQty(toBase(values[g.id], g.unit), g.unit)}${lossOf(g) > 0 ? ` → trừ ${money(lossOf(g))}` : ''}`)
+        .join('\n')
+      const total = loss > 0 ? `\n\nTổng hao hụt sẽ trừ vào lãi: ${money(loss)}.` : ''
+      if (!confirm(`Các món lệch nhiều so với sổ sách:\n${list}${total}\n\nĐã cân / đếm lại chắc chắn chưa? OK = lưu, Hủy = xem lại.`)) return
     }
     setBusy(true)
     const rows = filled.map((g) => ({
@@ -417,6 +444,11 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
             >
               Chưa nhập ({ingredients.length - filled.length})
             </button>
+            {(bigList.length > 0 || cat === 'big') && (
+              <button type="button" className={`chip chip-bad ${cat === 'big' ? 'active' : ''}`} onClick={() => setCat('big')}>
+                Lệch nhiều ({bigList.length})
+              </button>
+            )}
             {allGroups.map(([c, list]) => {
               const done = list.filter(isFilled).length
               return (
@@ -440,8 +472,12 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
                   const v = values[g.id]
                   const diff = diffOf(g)
                   const big = isBig(g)
+                  const m = lossOf(g)
+                  const slip = slipOf(g)
+                  // sổ cao gấp nhiều lần số đếm → hay là lần nhập hàng / kiểm kê trước gõ nhầm, không phải hàng mất thật
+                  const bookOdd = big && diff < 0 && toBase(v, g.unit) < expected[g.id] / 5
                   return (
-                    <div key={g.id} className={`count-row ${big ? 'count-row-big' : ''}`}>
+                    <div key={g.id} className={`count-row ${big ? 'count-row-big' : isFilled(g) ? 'count-row-done' : ''}`}>
                       <div className="grow">
                         <div>{g.name}</div>
                         <div className="muted small">
@@ -449,21 +485,40 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
                           {diff !== null && Math.abs(diff) > 1e-9 && (
                             <span className={diff < 0 ? 'danger-text' : 'good-text'}>
                               {' '}
-                              · {diff > 0 ? '+' : ''}
-                              {fmtQty(diff, g.unit)}
+                              · {diff > 0 ? 'dư' : 'hụt'} {fmtQty(Math.abs(diff), g.unit)}
+                              {m > 0 && ` = −${money(m)}`}
                             </span>
                           )}
+                          {diff !== null && Math.abs(diff) <= 1e-9 && <span className="good-text"> · khớp sổ</span>}
                         </div>
-                        {big && <div className="small danger-text">Lệch nhiều — cân lại cho chắc (sót bịch? nhầm kg / g?)</div>}
+                        {slip ? (
+                          <button type="button" className="link-btn count-fix" onClick={() => setValue(g, slip)}>
+                            Nhầm đơn vị? Ý bạn là <b>{num(Number(slip), 3)} {bigOf(g.unit)}</b> — bấm để sửa
+                          </button>
+                        ) : bookOdd ? (
+                          <div className="small danger-text">
+                            Sổ sách cao bất thường. Nếu lần nhập hàng / kiểm kê trước gõ nhầm thì đừng lưu số này: vào <b>Lịch sử kiểm kê</b> bấm{' '}
+                            <b>Nhập sai</b> lần đó (hoặc xóa phiếu nhập sai) trước.
+                          </div>
+                        ) : (
+                          big && <div className="small danger-text">Lệch nhiều — cân lại cho chắc (sót bịch? nhầm kg / g?)</div>
+                        )}
                       </div>
+                      {!isFilled(g) && expected[g.id] > 0 && (
+                        <button type="button" className="btn btn-ghost btn-sm count-same" onClick={() => setValue(g, bookOf(g))} title="Đếm thấy đúng bằng sổ sách">
+                          = Sổ
+                        </button>
+                      )}
                       <div className="unit-input count-input">
                         <input
                           type="number"
                           step="any"
                           min="0"
                           inputMode="decimal"
+                          enterKeyHint="next"
                           value={v ?? ''}
-                          onChange={(e) => setValues((s) => ({ ...s, [g.id]: e.target.value }))}
+                          onChange={(e) => setValue(g, e.target.value)}
+                          onKeyDown={nextInput}
                           aria-label={`Tồn thực tế ${g.name}`}
                         />
                         <span>{bigOf(g.unit)}</span>
@@ -478,28 +533,33 @@ function StockCountForm({ ingredients, onClose, onSaved }) {
         <Field label="Ghi chú">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="VD: hạt điều bị ẩm 200g" />
         </Field>
-        {filled.length > 0 && (
-          <div className="summary-box">
-            <div className="kv">
-              <span>{loss >= 0 ? 'Hao hụt' : 'Dư so với sổ sách (không tính tiền)'}</span>
-              <strong className={loss > 0 ? 'danger-text' : ''}>{money(Math.abs(loss))}</strong>
-            </div>
-            <div className="kv">
-              <span>Đã nhập</span>
+        {/* luôn nằm dưới đáy: thấy ngay tiền hụt và nút lưu, không phải cuộn hết danh sách */}
+        <div className="count-footer">
+          {filled.length > 0 && (
+            <div className="count-sum small">
               <span>
-                {filled.length}/{ingredients.length} nguyên liệu
-                {bigList.length > 0 && <span className="danger-text"> · {bigList.length} món lệch nhiều</span>}
+                Đã nhập <b>{filled.length}</b>/{ingredients.length}
+                {surplus > 0 && <span className="muted"> · {surplus} món dư (không tính tiền)</span>}
+              </span>
+              <span>
+                {loss > 0 ? (
+                  <>
+                    Hao hụt <b className="danger-text">−{money(loss)}</b>
+                  </>
+                ) : (
+                  <span className="good-text">Không hụt</span>
+                )}
               </span>
             </div>
+          )}
+          <div className="form-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Hủy
+            </button>
+            <SaveButton busy={busy} disabled={!expected}>
+              Lưu kiểm kê
+            </SaveButton>
           </div>
-        )}
-        <div className="form-actions">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Hủy
-          </button>
-          <SaveButton busy={busy} disabled={!expected}>
-            Lưu kiểm kê
-          </SaveButton>
         </div>
       </form>
     </Modal>

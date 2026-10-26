@@ -1,7 +1,9 @@
 import { supabase } from './supabase'
 import { cached, peek } from './cache'
+import { withKept } from './keep'
 
-// Món, nguyên liệu, công thức: dùng ở nhiều trang, ít thay đổi → dùng lại trong 1 phút
+// Món, nguyên liệu, công thức: dùng ở nhiều trang, ít thay đổi → dùng lại trong 1 phút.
+// Giữ bản sao trong máy: mất mạng vẫn mở được trang Bán hàng với đúng menu, giá, công thức.
 const KEY = 'catalog'
 
 async function fetchCatalog() {
@@ -15,5 +17,5 @@ async function fetchCatalog() {
   return { products: p.data, ingredients: i.data, recipes: r.data }
 }
 
-export const loadCatalog = (maxAge = 60000) => cached(KEY, fetchCatalog, maxAge)
+export const loadCatalog = (maxAge = 60000) => cached(KEY, () => withKept(KEY, fetchCatalog), maxAge)
 export const peekCatalog = () => peek(KEY)

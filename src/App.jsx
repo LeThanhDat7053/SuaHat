@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { isConfigured, supabase } from './lib/supabase'
 import { startLive } from './lib/live'
+import { startOutbox } from './lib/outbox'
+import { isNetworkError } from './lib/net'
 import { BARISTA_PATHS, useBarista } from './lib/barista'
 import Layout from './components/Layout'
 import { Loading } from './components/ui'
@@ -21,6 +23,7 @@ const pages = {
   Guide: () => import('./pages/Guide'),
   QuickOrders: () => import('./pages/QuickOrders'),
   BaristaSplit: () => import('./pages/BaristaSplit'),
+  Checks: () => import('./pages/Checks'),
 }
 const Purchases = lazy(pages.Purchases)
 const Products = lazy(pages.Products)
@@ -30,6 +33,18 @@ const Ingredients = lazy(pages.Ingredients)
 const Guide = lazy(pages.Guide)
 const QuickOrders = lazy(pages.QuickOrders)
 const BaristaSplit = lazy(pages.BaristaSplit)
+const Checks = lazy(pages.Checks)
+
+const OFFLINE = { offline: true }
+
+// Máy này đã đăng nhập trước đó (Supabase lưu phiên với tên sb-…-auth-token)
+function hasSavedLogin() {
+  try {
+    return Object.keys(localStorage).some((k) => /^sb-.*-auth-token$/.test(k))
+  } catch {
+    return false
+  }
+}
 
 function prefetchPages() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500))
@@ -45,14 +60,21 @@ function AuthedApp() {
   const [session, setSession] = useState(undefined)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    // Mở app lúc mất mạng mà phiên đăng nhập vừa hết hạn (chưa làm mới được): vẫn cho vào app để bán
+    // (đơn lưu trong máy), có mạng lại Supabase tự làm mới phiên rồi gửi lên.
+    supabase.auth.getSession().then(({ data, error }) =>
+      setSession(data.session || (error && isNetworkError(error) && hasSavedLogin() ? OFFLINE : null)),
+    )
+    const { data } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event !== 'INITIAL_SESSION') setSession(s)
+    })
     return () => data.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (!session) return
     startLive()
+    startOutbox()
     prefetchPages()
   }, [!!session])
 
@@ -76,6 +98,7 @@ function AuthedApp() {
           <Route path="/chi-phi" element={<Expenses />} />
           <Route path="/nguyen-lieu" element={<Ingredients />} />
           <Route path="/huong-dan" element={<Guide />} />
+          <Route path="/kiem-tra" element={<Checks />} />
           <Route path="/khac" element={<More />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

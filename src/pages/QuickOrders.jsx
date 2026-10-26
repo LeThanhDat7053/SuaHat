@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ClipboardList } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { money, todayStr } from '../lib/format'
-import { saleCost, saleRevenue } from '../lib/cost'
+import { saleCost, saleRevenue, soldQty } from '../lib/cost'
 import { completeQuickOrder, linesProfit, missingTable, reopenQuickOrder } from '../lib/quick'
 import { OrderCard, orderLabel } from '../components/QuickOrder'
 import { DateNav, Empty, Loading, PageHeader, StatTile } from '../components/ui'
@@ -62,8 +62,10 @@ export default function QuickOrders() {
   const { pending, done, sales } = data
   const revenue = sum(sales, saleRevenue)
   const profit = revenue - sum(sales, saleCost)
-  const chai = sum(sales, (r) => (r.pack === 'chai' ? r.quantity : 0))
-  const ly = sum(sales, (r) => r.quantity) - chai
+  // bán sỉ không tính vào số ly / chai đã bán (vẫn có doanh thu)
+  const chai = sum(sales, (r) => (r.pack === 'chai' ? soldQty(r) : 0))
+  const ly = sum(sales, soldQty) - chai
+  const ws = sum(sales, (r) => (r.wholesale ? r.quantity : 0))
   const list = tab === 'pending' ? pending : done
 
   return (
@@ -79,7 +81,7 @@ export default function QuickOrders() {
       <div className="stats">
         <StatTile label="Doanh thu" value={money(revenue)} note={`${done.length} đơn quầy đã xong`} />
         <StatTile label="Lãi tạm tính" value={money(profit)} note="Doanh thu − giá vốn (chưa trừ hủy)" tone="good" />
-        <StatTile label="Ly đã bán" value={ly} />
+        <StatTile label="Ly đã bán" value={ly} note={ws > 0 ? `+ ${ws} phần bán sỉ (không tính)` : undefined} />
         <StatTile label="Chai đã bán" value={chai} />
       </div>
       <p className="muted small" style={{ margin: '8px 0 16px' }}>

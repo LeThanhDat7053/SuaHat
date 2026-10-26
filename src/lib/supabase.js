@@ -44,6 +44,13 @@ export async function getSetting(key, fallback) {
   return data?.value ?? fallback
 }
 
+// Như getSetting nhưng báo lỗi (để biết là rớt mạng chứ không phải chưa cài)
+export async function getSettingStrict(key, fallback) {
+  const { data, error } = await supabase.from('settings').select('value').eq('key', key).maybeSingle()
+  if (error) throw error
+  return data?.value ?? fallback
+}
+
 export async function setSetting(key, value) {
   const { error } = await supabase.from('settings').upsert({ key, value })
   return !showError(error)

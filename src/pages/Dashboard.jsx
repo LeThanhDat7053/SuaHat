@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleQuestionMark, Download, TriangleAlert } from 'lucide-react'
 import { fetchAll, getSetting, showError, supabase } from '../lib/supabase'
-import { countLoss, loadStockCached } from '../lib/stock'
-import { DEFAULT_MARGIN, productCost, saleCost, saleRevenue, toMap } from '../lib/cost'
+import { loadStockCached } from '../lib/stock'
+import { DEFAULT_MARGIN, productCost, saleCost, saleRevenue, soldQty, toMap } from '../lib/cost'
+import { presetRange, prevRange, profitReport, sum, summarize } from '../lib/report'
+import { loadChecks } from '../lib/checks'
 import { orderItemsText } from '../lib/orders'
 import { packText } from '../lib/quick'
 import { downloadXlsx } from '../lib/xlsx'
 import { applyRecurring } from '../lib/recurring'
 import { cached, peek } from '../lib/cache'
 import { useLive } from '../lib/live'
-import { addDays, daysBetween, fmtDate, fmtQty, fmtTime, money, moneyShort, monthRange, num, periodRange, todayStr } from '../lib/format'
+import { addDays, daysBetween, fmtDate, fmtQty, fmtTime, money, moneyShort, num, periodRange, todayStr } from '../lib/format'
 import { Loading, PageHeader, StatTile } from '../components/ui'
 import BarChart from '../components/BarChart'
 import Traffic from '../components/Traffic'
@@ -26,34 +28,6 @@ const PRESETS = [
   { key: 'custom', label: 'Tùy chọn' },
 ]
 
-function presetRange(key) {
-  const t = todayStr()
-  if (key === 'today') return { from: t, to: t }
-  if (key === 'yesterday') return { from: addDays(t, -1), to: addDays(t, -1) }
-  if (key === 'week') return { from: periodRange('week', t).from, to: t }
-  if (key === 'lastweek') return periodRange('week', addDays(t, -7))
-  if (key === 'month') return { from: monthRange(t.slice(0, 7)).from, to: t }
-  const firstThis = monthRange(t.slice(0, 7)).from
-  return monthRange(addDays(firstThis, -1).slice(0, 7))
-}
-
-// Kỳ trước để so sánh:
-// - trong 1 tuần, bắt đầu thứ 2 ("Tuần này") → cùng các thứ của tuần trước (T2–T6 so với T2–T6)
-// - trong 1 tháng, bắt đầu ngày 1 ("Tháng này") → cùng các ngày của tháng trước (1–17 so với 1–17)
-// - còn lại: kỳ liền trước, cùng số ngày
-function prevRange({ from, to }) {
-  const n = daysBetween(from, to).length
-  if (periodRange('week', from).from === from && n <= 7) return { from: addDays(from, -7), to: addDays(to, -7) }
-  if (from.slice(8) === '01' && from.slice(0, 7) === to.slice(0, 7)) {
-    const last = monthRange(addDays(from, -1).slice(0, 7))
-    const to2 = `${last.from.slice(0, 8)}${to.slice(8)}`
-    // trọn tháng (VD "Tháng trước") → so trọn tháng trước nữa
-    const full = to === monthRange(to.slice(0, 7)).to
-    return { from: last.from, to: full || to2 > last.to ? last.to : to2 }
-  }
-  return { from: addDays(from, -n), to: addDays(from, -1) }
-}
-
 // Tuần này (thứ 2 → hôm nay) so với cùng các ngày tuần trước — luôn hiện, không phụ thuộc kỳ đang xem
 async function fetchWeek() {
   const t = todayStr()
@@ -63,14 +37,7 @@ async function fetchWeek() {
   return { now: { ...summarize(a.sales, a.waste), range: now }, before: { ...summarize(b.sales, b.waste), range: before } }
 }
 
-const sum = (rows, f) => rows.reduce((s, r) => s + f(r), 0)
 const dm = (s) => `${Number(s.slice(8))}/${Number(s.slice(5, 7))}`
-// Hao hụt kiểm kê: chỉ tính phần THIẾU. Dư không cộng tiền (kẻo lãi bị ảo).
-// Kiểm kê nhầm thì xóa lần đó ở Lịch sử kiểm kê ("Nhập sai") để gỡ tiền.
-const shrinkOf = (counts) => sum(counts, countLoss)
-
-// Tiền mua nguyên liệu "Tính 1 lần lúc mua" (sữa đặc, đường…): trừ thẳng vào lãi kỳ mua
-const directBuy = (purchases) => sum(purchases, (r) => (r.ingredients?.cost_on_buy && !r.ingredients?.no_stock ? Number(r.total) : 0))
 
 const dmy = (s) => `${s.slice(8)}/${s.slice(5, 7)}/${s.slice(0, 4)}`
 
@@ -85,14 +52,6 @@ async function loadRange({ from, to }, full) {
   if (error) throw error
   const [sales, a, b, c, d, e] = res.map((r) => r.data)
   return full ? { sales, purchases: a, expenses: b, waste: c, counts: d, closings: e } : { sales, waste: a }
-}
-
-function summarize(sales, waste) {
-  const revenue = sum(sales, saleRevenue)
-  const cogs = sum(sales, saleCost)
-  const wasteCost = sum(waste, (r) => r.quantity * r.unit_cost)
-  const cups = sum(sales, (r) => r.quantity)
-  return { revenue, cogs, wasteCost, cups, gross: revenue - cogs - wasteCost }
 }
 
 const reportKey = (r) => `dash:${r.from}:${r.to}`
@@ -149,6 +108,7 @@ export default function Dashboard() {
   const [upcoming, setUpcoming] = useState(() => peek('dash-upcoming') || [])
   const [alerts, setAlerts] = useState(() => peek('dash-alerts') || null)
   const [week, setWeek] = useState(() => peek('dash-week') || null)
+  const [checks, setChecks] = useState(() => peek('checks') || null)
   const [tick, setTick] = useState(0) // tăng lên khi có dữ liệu mới → tải lại
   useLive(
     ['sales', 'waste', 'purchases', 'expenses', 'stock_counts', 'day_closings', 'orders', 'quick_orders', 'products', 'ingredients', 'recipes', 'settings'],
@@ -177,7 +137,12 @@ export default function Dashboard() {
     cached('dash-week', fetchWeek).then(setWeek, (e) => console.error(e))
     // tồn kho tính khá nặng: dùng lại trong 2 phút
     cached('dash-alerts', fetchAlerts, 120000).then(setAlerts, (e) => console.error(e))
+    // quét số liệu khá nặng: dùng lại trong 5 phút
+    loadChecks(300000).then(setChecks, (e) => console.error(e))
   }, [tick])
+
+  // chỉ nhắc ở Tổng quan những chỗ đang làm sai số (chi tiết + mục "nên xem" ở trang Kiểm tra số liệu)
+  const wrong = (checks || []).filter((i) => i.level === 'error')
 
   return (
     <>
@@ -205,11 +170,19 @@ export default function Dashboard() {
         </div>
       )}
 
-      {alerts && (alerts.low.length > 0 || alerts.thin.length > 0 || alerts.stale?.quick > 0 || alerts.stale?.pre > 0) && (
+      {((alerts && (alerts.low.length > 0 || alerts.thin.length > 0 || alerts.stale?.quick > 0 || alerts.stale?.pre > 0)) || wrong.length > 0) && (
         <div className="card alert-card">
           <strong>
             <TriangleAlert size={18} className="inline-icon" /> Cần chú ý
           </strong>
+          {wrong.length > 0 && (
+            <Link to="/kiem-tra" className="alert-row">
+              <span>
+                <b>Kiểm tra số liệu: {wrong.length} việc cần sửa để số đúng</b>
+              </span>
+              <span className="muted">{wrong.map((i) => i.title).join(' · ')}</span>
+            </Link>
+          )}
           {alerts.stale?.quick > 0 && (
             <Link to="/ban-hang" className="alert-row">
               <span>{alerts.stale.quick} đơn nhanh từ hôm trước chưa bấm “Đã xong”</span>
@@ -339,22 +312,13 @@ function Report({ data, range }) {
       return false
     }
   })
-  const { sales, purchases, expenses, waste, counts, closings, prev } = data
-  const cur = summarize(sales, waste)
-  const old = summarize(prev.sales, prev.waste)
-  const bought = sum(purchases, (r) => Number(r.total))
-  const other = sum(expenses, (r) => Number(r.amount))
-  const shrink = shrinkOf(counts)
-  const direct = directBuy(purchases)
-  const net = cur.gross - shrink - other - direct
-  const cash = cur.revenue - bought - other
-  const wasteQty = sum(waste, (r) => r.quantity)
-  const made = cur.cups + sum(sales, (r) => r.gift_qty || 0) + wasteQty
-
+  const { sales, waste, closings, prev } = data
   const days = daysBetween(range.from, range.to)
-  const perCup = cur.cups ? cur.gross / cur.cups : 0
-  const needPerDay = perCup > 0 ? (other + direct) / perCup / days.length : 0
-  const soldPerDay = cur.cups / days.length
+  const { cur, bought, other, shrink, direct, net, cash, perCup, needPerDay, soldPerDay } = profitReport(data, days.length)
+  const old = summarize(prev.sales, prev.waste)
+  const wasteQty = sum(waste, (r) => r.quantity)
+  const made = cur.cups + cur.wsQty + sum(sales, (r) => r.gift_qty || 0) + wasteQty
+
 
   const vs = <span className="muted">so với {prev.range.from === prev.range.to ? dm(prev.range.from) : `${dm(prev.range.from)}–${dm(prev.range.to)}`}</span>
 
@@ -363,11 +327,12 @@ function Report({ data, range }) {
   const addTo = (rows, key) =>
     rows.forEach((r) => {
       const name = r.product_name.replace(/\s\((Ly|Chai)\)$/, '')
-      const p = (byProduct[r.product_id || name] ||= { name, qty: 0, ly: 0, chai: 0, revenue: 0, profit: 0, prevQty: 0 })
-      if (key === 'prevQty') p.prevQty += r.quantity
+      const p = (byProduct[r.product_id || name] ||= { name, qty: 0, ly: 0, chai: 0, ws: 0, revenue: 0, profit: 0, prevQty: 0 })
+      if (key === 'prevQty') p.prevQty += soldQty(r)
       else {
-        p.qty += r.quantity
-        p[r.pack === 'chai' ? 'chai' : 'ly'] += r.quantity
+        p.qty += soldQty(r)
+        p[r.pack === 'chai' ? 'chai' : 'ly'] += soldQty(r)
+        if (r.wholesale) p.ws += r.quantity
         p.revenue += saleRevenue(r)
         p.profit += saleRevenue(r) - saleCost(r)
       }
@@ -375,7 +340,7 @@ function Report({ data, range }) {
   addTo(sales, 'cur')
   addTo(prev.sales, 'prevQty')
   const top = Object.values(byProduct)
-    .filter((p) => p.qty > 0)
+    .filter((p) => p.qty > 0 || p.ws > 0)
     .sort((a, b) => b.revenue - a.revenue)
 
   const perDay = Object.fromEntries(days.map((d) => [d, 0]))
@@ -401,6 +366,7 @@ function Report({ data, range }) {
           note={
             <>
               {cur.cups} phần
+              {cur.wsQty > 0 && ` + ${num(cur.wsQty)} sỉ`}
               <Change now={cur.revenue} before={old.revenue} prefix=" · " />
             </>
           }
@@ -427,7 +393,7 @@ function Report({ data, range }) {
         <div className="calc-grid">
           <div className="card calc">
             <div className="calc-title">Lãi ròng tính thế nào</div>
-            <CalcRow label="Doanh thu" sub={<>{cur.cups} phần<Change now={cur.revenue} before={old.revenue} prefix=" · " suffix={<> {vs}</>} /></>} value={cur.revenue} />
+            <CalcRow label="Doanh thu" sub={<>{cur.cups} phần{cur.wsQty > 0 && ` + ${num(cur.wsQty)} sỉ`}<Change now={cur.revenue} before={old.revenue} prefix=" · " suffix={<> {vs}</>} /></>} value={cur.revenue} />
             <CalcRow minus label="Nguyên liệu của số ly đã bán" sub="Theo công thức × giá nguyên liệu" value={cur.cogs} />
             {cur.wasteCost > 0 && <CalcRow minus label="Hàng hủy" sub={`${wasteQty} phần`} value={cur.wasteCost} />}
             {shrink > 0 && <CalcRow minus label="Hao hụt kiểm kê" sub="Đếm thực tế thiếu so với sổ" value={shrink} />}
@@ -486,8 +452,8 @@ function Report({ data, range }) {
                   </div>
                   <div className="top-row muted small">
                     <span>
-                      {packText(p.ly, p.chai)}
-                      {p.prevQty ? <Change now={p.qty} before={p.prevQty} prefix=" · " /> : <span> · mới</span>}
+                      {[packText(p.ly, p.chai), p.ws > 0 && `sỉ ${num(p.ws)}`].filter(Boolean).join(' · ')}
+                      {p.prevQty ? <Change now={p.qty} before={p.prevQty} prefix=" · " /> : p.qty > 0 && <span> · mới</span>}
                     </span>
                     <span className={p.profit < 0 ? 'danger-text' : 'good-text'}>lãi {moneyShort(p.profit)}</span>
                   </div>
@@ -506,7 +472,7 @@ function Report({ data, range }) {
 
 // Vài câu nhận xét dễ hiểu cho người không rành số liệu
 function insights({ cur, old, net, top, other, perCup, needPerDay, soldPerDay, wasteQty, made }) {
-  if (cur.cups === 0) return [{ text: 'Chưa có số bán trong khoảng thời gian này.' }]
+  if (cur.cups === 0 && cur.wsQty === 0) return [{ text: 'Chưa có số bán trong khoảng thời gian này.' }]
   const out = []
   if (old.revenue > 0) {
     const pct = ((cur.revenue - old.revenue) / old.revenue) * 100
@@ -517,6 +483,8 @@ function insights({ cur, old, net, top, other, perCup, needPerDay, soldPerDay, w
       })
     else out.push({ text: 'Bán được gần bằng kỳ trước.' })
   }
+  if (cur.wsQty > 0)
+    out.push({ text: `Bán sỉ ${num(cur.wsQty)} phần, thu ${money(cur.wsRevenue)}, lãi ${money(cur.wsGross)} (không tính vào số phần bán).` })
   if (perCup > 0) out.push({ text: `Mỗi phần bán ra lãi trung bình ${money(perCup)} (chưa trừ chi phí khác).` })
   if (net < 0) {
     out.push({ text: `Đang lỗ ${money(-net)}: chi phí khác (${money(other)}) nhiều hơn tiền lãi từ bán hàng.`, tone: 'danger' })
@@ -531,11 +499,7 @@ function insights({ cur, old, net, top, other, perCup, needPerDay, soldPerDay, w
 
 function exportExcel(range, data) {
   const { sales, purchases, expenses, waste, counts, closings } = data
-  const cur = summarize(sales, waste)
-  const bought = sum(purchases, (r) => Number(r.total))
-  const other = sum(expenses, (r) => Number(r.amount))
-  const shrink = shrinkOf(counts)
-  const direct = directBuy(purchases)
+  const { cur, bought, other, shrink, direct, net, cash } = profitReport(data, daysBetween(range.from, range.to).length)
   const r0 = Math.round
   const sheets = [
     {
@@ -544,7 +508,9 @@ function exportExcel(range, data) {
         ['Chỉ số', 'Số tiền'],
         ['Từ ngày', dmy(range.from)],
         ['Đến ngày', dmy(range.to)],
-        ['Số phần bán', cur.cups],
+        ['Số phần bán (lẻ)', cur.cups],
+        ['Số phần bán sỉ', cur.wsQty],
+        ['Doanh thu bán sỉ', r0(cur.wsRevenue)],
         ['Doanh thu', r0(cur.revenue)],
         ['Giá vốn hàng bán (gồm tặng)', r0(cur.cogs)],
         ['Hàng hủy', r0(cur.wasteCost)],
@@ -552,9 +518,9 @@ function exportExcel(range, data) {
         ['Hao hụt kiểm kê', r0(shrink)],
         ['Chi phí khác', r0(other)],
         ['Nguyên liệu tính lúc mua', r0(direct)],
-        ['Lãi ròng', r0(cur.gross - shrink - other - direct)],
+        ['Lãi ròng', r0(net)],
         ['Tiền nhập nguyên liệu', r0(bought)],
-        ['Tiền còn lại', r0(cur.revenue - bought - other)],
+        ['Tiền còn lại', r0(cash)],
       ],
     },
     {
@@ -564,7 +530,8 @@ function exportExcel(range, data) {
         ...sales.map((r) => [
           dmy(r.date),
           r.product_name,
-          r.source.startsWith('quick:') ? `Đơn quầy #${r.source.split(':')[1]}` : r.source ? `Đơn đặt #${r.source.split(':')[1]}` : 'Tại quán',
+          (r.source.startsWith('quick:') ? `Đơn quầy #${r.source.split(':')[1]}` : r.source ? `Đơn đặt #${r.source.split(':')[1]}` : 'Tại quán') +
+            (r.wholesale ? ' (sỉ)' : ''),
           r.quantity,
           r.gift_qty || 0,
           r0(r.unit_price),

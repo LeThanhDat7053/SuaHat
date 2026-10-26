@@ -18,12 +18,14 @@ import {
   WifiOff,
   Wifi,
   Moon,
+  ShieldCheck,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { BARISTA_PATHS, setBarista, useBarista } from '../lib/barista'
 import { ReminderWatcher } from './Reminders'
 import { useLiveStatus } from '../lib/live'
 import { useNet } from '../lib/net'
+import { outboxJobs, useOutbox } from '../lib/outbox'
 import { THEMES, setTheme, useTheme } from '../lib/theme'
 
 // mobile: hiện ở thanh dưới điện thoại (còn lại nằm trong "Khác")
@@ -38,6 +40,7 @@ export const NAV = [
   { to: '/nguyen-lieu', label: 'Nguyên liệu & tồn kho', icon: Wheat },
   { to: '/san-pham', label: 'Sản phẩm & sửa công thức', icon: CupSoda },
   { to: '/chi-phi', label: 'Chi phí khác', icon: Receipt },
+  { to: '/kiem-tra', label: 'Kiểm tra số liệu', icon: ShieldCheck },
   { to: '/huong-dan', label: 'Cách dùng', icon: CircleQuestionMark },
 ]
 
@@ -48,7 +51,9 @@ export function navFor(barista) {
 }
 
 export function logout() {
-  if (confirm('Đăng xuất khỏi máy này?')) supabase.auth.signOut()
+  const n = outboxJobs().length
+  const warn = n ? `\n\nCòn ${n} thao tác lưu lúc mất mạng chưa gửi lên — vẫn giữ trong máy, đăng nhập lại sẽ tự gửi.` : ''
+  if (confirm('Đăng xuất khỏi máy này?' + warn)) supabase.auth.signOut()
 }
 
 export function toggleBarista(on) {
@@ -139,6 +144,9 @@ export function ThemePick({ short }) {
 function NetStatus() {
   const live = useLiveStatus()
   const { down, slow } = useNet()
+  const { jobs } = useOutbox()
+  const unsent = jobs.filter((j) => !j.error).length
+  const failed = jobs.length - unsent
   const [back, setBack] = useState(false)
   const wasDown = useRef(false)
 
@@ -159,11 +167,25 @@ function NetStatus() {
   if (down) {
     tone = 'warn'
     icon = <WifiOff size={16} />
-    text = 'Mất mạng — đang chờ kết nối lại. Thao tác lúc này có thể chưa lưu.'
+    text = unsent
+      ? `Mất mạng — ${unsent} thao tác đã lưu trong máy, có mạng sẽ tự gửi.`
+      : 'Mất mạng — vẫn lập đơn, bán hàng được (lưu trong máy, có mạng tự gửi).'
   } else if (slow) {
     tone = 'slow'
     icon = <span className="spinner" aria-hidden="true" />
     text = 'Mạng chậm, đang tải…'
+  } else if (failed) {
+    tone = 'warn'
+    icon = <WifiOff size={16} />
+    text = (
+      <>
+        {failed} thao tác chưa gửi được — <NavLink to="/kiem-tra">xem ở Kiểm tra số liệu</NavLink>
+      </>
+    )
+  } else if (unsent) {
+    tone = 'slow'
+    icon = <span className="spinner" aria-hidden="true" />
+    text = `Đang gửi ${unsent} thao tác lưu lúc mất mạng…`
   } else if (back) {
     tone = 'good'
     icon = <Wifi size={16} />

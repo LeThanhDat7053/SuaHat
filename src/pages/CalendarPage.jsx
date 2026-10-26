@@ -5,7 +5,7 @@ import { showError, supabase } from '../lib/supabase'
 import { addDays, fmtDateLong, fmtTime, money, parseDate, toDateStr, todayStr } from '../lib/format'
 import { Field, Modal, MoneyInput, PageHeader, SaveButton, useSubmit } from '../components/ui'
 import { deleteOrderSales, linePack, linesTotal, markOrderDone, orderItemsText, packTotals, showAt, syncOrderSales } from '../lib/orders'
-import { CHAI_DEFAULTS, addLines, getChaiDefaults, lineKey, variantText } from '../lib/quick'
+import { CHAI_DEFAULTS, WHOLESALE_UPGRADE, addLines, getChaiDefaults, lineKey, missingColumn, variantText } from '../lib/quick'
 import { orderDue, reminderForm, reminderPayload, remindersChanged, setReminderOff, toLocalInput } from '../lib/reminders'
 import { ReminderField, ReminderList } from '../components/Reminders'
 import { Stepper, VariantGrid, VariantTag, useVariantPick } from '../components/QuickOrder'
@@ -215,7 +215,7 @@ export default function CalendarPage() {
             <div key={o.id} className={`card order-card ${o.status}`}>
               <div className="order-top">
                 <div>
-                  <strong>{o.customer}</strong>
+                  {o.wholesale && <span className="badge badge-ws">Bán sỉ</span>} <strong>{o.customer}</strong>
                   {o.order_time && <span className="muted"> · {fmtTime(o.order_time)}</span>}
                 </div>
                 <span className="order-badges">
@@ -345,6 +345,7 @@ export function OrderForm({ order, onClose, onSaved }) {
     deposit: order.deposit ?? '',
     status: order.status || 'pending',
     note: order.note || '',
+    wholesale: !!order.wholesale,
   })
   const [remind, setRemind] = useState(() => reminderForm(order, `${order.order_date || todayStr()}T08:00`))
   const [busy, setBusy] = useState(false)
@@ -427,10 +428,16 @@ export function OrderForm({ order, onClose, onSaved }) {
       deposit: Number(form.deposit || 0),
       status: form.status,
       note: form.note.trim() || null,
+      // chỉ gửi cột wholesale (nang-cap-v9.sql) khi có dùng / đơn đã có cột này
+      ...(form.wholesale || 'wholesale' in order ? { wholesale: form.wholesale } : {}),
     }
     const { data, error } = order.id
       ? await supabase.from('orders').update(payload).eq('id', order.id).select().single()
       : await supabase.from('orders').insert(payload).select().single()
+    if (missingColumn(error) && payload.wholesale) {
+      setBusy(false)
+      return alert(WHOLESALE_UPGRADE)
+    }
     if (showError(error)) return setBusy(false)
     // đơn đã giao → ghi / cập nhật doanh thu
     showError(await syncOrderSales(data))
@@ -467,6 +474,15 @@ export function OrderForm({ order, onClose, onSaved }) {
           </Field>
         </div>
 
+        <label className={`ws-toggle ${form.wholesale ? 'on' : ''}`}>
+          <input type="checkbox" checked={form.wholesale} onChange={(e) => set('wholesale', e.target.checked)} />
+          Bán sỉ
+        </label>
+        {form.wholesale && (
+          <p className="field-hint">
+            Đơn sỉ vẫn cộng doanh thu và trừ nguyên liệu, nhưng <b>không</b> cộng vào số phần đã bán. Bấm vào giá từng món bên dưới để sửa thành giá sỉ.
+          </p>
+        )}
         <div className="field">
           <span className="field-label">Món đặt</span>
           {groups.length > 0 && (

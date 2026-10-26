@@ -17,10 +17,10 @@ import { Empty, Loading, PageHeader } from '../components/ui'
 const qty = (q, unit) => `${num(q, 1)} ${unit}`
 
 // Chia mẻ: ÷2 = nấu nửa mẻ → mọi nguyên liệu tự giảm một nửa, khỏi tính nhẩm
-// Hoặc "Theo ly": pha đúng N ly × bao nhiêu ml (250, 300, 350… hay gõ tay) → lượng từng nguyên liệu tính theo ml.
+// Hoặc "Theo ly": pha đúng N ly × bao nhiêu ml (250, 270, 300, 350… hay gõ tay) → lượng từng nguyên liệu tính theo ml.
 // Lưu mỗi công thức: số (÷2) hoặc { n, ml }
 const DIVS = [1, 2, 3, 4, 5]
-const SIZES = [250, 300, 350, 500, 600]
+const SIZES = [250, 270, 300, 350, 500, 600]
 const isCup = (v) => v != null && typeof v === 'object'
 // Hệ số nhân lượng của mẻ gốc
 const scaleOf = (v, yieldMl) => (isCup(v) ? (yieldMl > 0 ? (v.n * Number(v.ml || 0)) / yieldMl : 1) : 1 / (Number(v) || 1))
@@ -240,7 +240,7 @@ export default function Recipes() {
 
   return (
     <>
-      <PageHeader title="Công thức pha chế" subtitle="Nguyên liệu của từng mẻ. Chọn “Ly” để pha đúng số ly 250, 300, 350… 600 ml, hoặc ÷2, ÷3… để nấu nửa mẻ — số tự tính sẵn.">
+      <PageHeader title="Công thức pha chế" subtitle="Nguyên liệu của từng mẻ. Chọn “Ly” để pha đúng số ly 250, 270, 300, 350… 600 ml, hoặc ÷2, ÷3… để nấu nửa mẻ — số tự tính sẵn.">
         {!barista && (
           <Link to="/san-pham" className="btn btn-ghost">
             Sửa công thức

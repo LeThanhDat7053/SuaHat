@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom'
 import { BookOpen, Columns3, CupSoda, Ellipsis, Trash2, ClipboardList, ClipboardPlus, Star, ChevronDown } from 'lucide-react'
 import { setSetting, showError, supabase } from '../lib/supabase'
 import { addDays, money, moneyShort, todayStr } from '../lib/format'
-import { productCost, saleCost, saleRevenue, toMap, usageSnapshot } from '../lib/cost'
-import { withUsage } from '../lib/usage'
+import { productCost, saleCost, saleRevenue, soldQty, toMap, usageSnapshot } from '../lib/cost'
 import { cached, peek } from '../lib/cache'
 import { loadCatalog, peekCatalog } from '../lib/catalog'
 import { useLive } from '../lib/live'
-import { CHAI_DEFAULTS, addLines, completeQuickOrder, getChaiDefaults, linesTotal, missingTable, packText, variantsText } from '../lib/quick'
+import { toast } from '../lib/toast'
+import { isNetworkError } from '../lib/net'
+import { keep, kept } from '../lib/keep'
+import { finishLocalOrder, localOrders, onSent, removeJob, send, sendNewQuickOrder, sendQuickDone, unsentSales, updateJob, useOutbox } from '../lib/outbox'
+import { CHAI_DEFAULTS, WHOLESALE_UPGRADE, addLines, getChaiDefaults, linesTotal, missingColumn, missingTable, packText, variantsText } from '../lib/quick'
 import { FEATURED_KEY, loadFeatured } from '../lib/featured'
 import { useBarista } from '../lib/barista'
 import { DraftPanel, OrderCard, PackPicker, PreOrderCard, PriceForm, orderLabel } from '../components/QuickOrder'
@@ -20,7 +23,8 @@ const isEmptyRow = (r) => !(r.quantity > 0) && !(r.gift_qty > 0) && !(Number(r.d
 
 // Đơn đang lập được giữ trong máy, tải lại trang không bị mất
 const DRAFT_KEY = 'quick-draft'
-const emptyDraft = () => ({ lines: [], note: '', editingId: null, date: null })
+// wholesale: đơn bán sỉ · hasWs: đơn đang sửa đã có cột wholesale (đã chạy nang-cap-v9) → được gửi cả false để bỏ tích
+const emptyDraft = () => ({ lines: [], note: '', editingId: null, date: null, wholesale: false, hasWs: false })
 function loadDraft() {
   try {
     const d = JSON.parse(localStorage.getItem(DRAFT_KEY))
@@ -76,6 +80,10 @@ export default function Sales({ split = false }) {
   const [rows, setRows] = useState(day0?.rows || {}) // product_id → dòng bán tại quán của ngày đang xem
   const [dayRows, setDayRows] = useState(day0?.dayRows || []) // mọi dòng bán trong ngày (cả đơn đặt, món đã ẩn)
   const [waste, setWaste] = useState(day0?.waste || {}) // product_id → dòng hủy
+  // đã có số bán của ngày đang xem chưa: chưa có (mở app lúc mất mạng) thì không cho sửa số tặng / giảm / hủy,
+  // kẻo ghi đè số thật trên database bằng số 0
+  const [dayOk, setDayOk] = useState(!!day0)
+  const outbox = useOutbox()
   const [extra, setExtra] = useState(null) // món đang mở "Tặng / giảm / hủy"
   const [status, setStatus] = useState('')
 
@@ -122,9 +130,18 @@ export default function Sales({ split = false }) {
       // báo thức có thể đặt từ hôm trước → lấy dư 2 ngày, lọc theo giờ hiện ở dưới
       supabase.from('orders').select('*').eq('status', 'pending').lte('order_date', addDays(todayStr(), 2)).order('order_date').order('order_time', { nullsFirst: true }),
     ])
-    if (!showError(o.error)) setPreorders(o.data)
+    // mất mạng: hiện danh sách đơn chờ lần trước (lưu trong máy) để vẫn pha / giao tiếp được
+    if (o.error && isNetworkError(o.error)) setPreorders((p) => (p.length ? p : kept('preorders') || []))
+    else if (!showError(o.error)) {
+      setPreorders(o.data)
+      keep('preorders', o.data)
+    }
     if (missingTable(q.error)) return setNeedsUpgrade(true)
-    if (!showError(q.error)) setPending(q.data)
+    if (q.error && isNetworkError(q.error)) setPending((p) => p || kept('pending-orders') || [])
+    else if (!showError(q.error)) {
+      setPending(q.data)
+      keep('pending-orders', q.data)
+    }
   }, [])
 
   // nhiều máy cùng bán: tự tải lại đơn chờ mỗi 20 giây và khi quay lại app
@@ -139,13 +156,17 @@ export default function Sales({ split = false }) {
     }
   }, [loadPending])
 
+  // lưu qua hàng chờ: mất mạng thì giữ trong máy, có mạng tự gửi (số cuối cùng của món đó)
   const save = useCallback(async (date, product, row) => {
     setStatus('saving')
-    const { error } = isEmptyRow(row)
-      ? await supabase.from('sales').delete().eq('date', date).eq('product_id', product.id).eq('source', '')
-      : await withUsage(
-          (r) => supabase.from('sales').upsert(r, { onConflict: 'date,product_id,source' }),
-          {
+    const res = await send({
+      type: 'sale',
+      key: `sale:${date}:${product.id}`,
+      date,
+      product_id: product.id,
+      row: isEmptyRow(row)
+        ? null
+        : {
             date,
             product_id: product.id,
             product_name: product.name,
@@ -157,9 +178,10 @@ export default function Sales({ split = false }) {
             unit_cost: row.unit_cost,
             usage: row.usage ?? null,
           },
-        )
-    setStatus(error ? 'error' : 'saved')
-    showError(error)
+    })
+    if (res.replaced) return
+    setStatus(res.error ? 'error' : res.queued ? 'queued' : 'saved')
+    showError(res.error)
   }, [])
 
   const flush = useCallback(() => {
@@ -182,7 +204,10 @@ export default function Sales({ split = false }) {
   async function loadDay(date, cancelled = () => false) {
     try {
       const d = await cached(dayKey(date), () => fetchDay(date))
-      if (!cancelled()) applyDay(d)
+      if (!cancelled()) {
+        applyDay(d)
+        setDayOk(true)
+      }
     } catch (e) {
       showError(e)
     }
@@ -191,7 +216,9 @@ export default function Sales({ split = false }) {
   useEffect(() => {
     flush()
     let cancelled = false
-    applyDay(peek(dayKey(date)) || { rows: {}, dayRows: [], waste: {} })
+    const old = peek(dayKey(date))
+    setDayOk(!!old)
+    applyDay(old || { rows: {}, dayRows: [], waste: {} })
     loadDay(date, () => cancelled)
     return () => {
       cancelled = true
@@ -203,6 +230,19 @@ export default function Sales({ split = false }) {
     loadPending()
     if (Object.keys(unsaved.current).length === 0) loadDay(date)
   })
+
+  // hàng chờ vừa gửi xong 1 đơn lưu lúc mất mạng → đưa vào danh sách / cập nhật số ngay, không đợi tải lại
+  const dateRef = useRef(date)
+  dateRef.current = date
+  useEffect(
+    () =>
+      onSent((job, data) => {
+        if (job.type === 'quick-new' && data?.status === 'pending') setPending((p) => (p && !p.some((o) => o.id === data.id) ? [...p, data] : p))
+        if (job.type === 'quick-done') setPending((p) => p && p.filter((o) => o.id !== job.order_id))
+        if (job.rows) loadDay(dateRef.current)
+      }),
+    [],
+  )
 
   const lyCost = (product) => productCost(product, costCtx.ing, costCtx.rec)
   const usageOf = (product) => usageSnapshot(product, costCtx.rec)
@@ -218,6 +258,7 @@ export default function Sales({ split = false }) {
 
   // patch: { quantity } hoặc { gift_qty, discount }
   function change(product, patch) {
+    if (!dayOk) return toast('Chưa tải được số bán của ngày này (đang mất mạng?). Có mạng lại rồi sửa nhé.', 'warn')
     if ('quantity' in patch) patch.quantity = Math.max(0, Math.floor(patch.quantity || 0))
     // giữ giá của lần nhập đầu tiên trong ngày để lịch sử không bị thay đổi
     const row = { ...(rows[product.id] || newRow(product)), product_id: product.id, product_name: product.name, source: '', ...patch }
@@ -235,26 +276,25 @@ export default function Sales({ split = false }) {
 
   async function saveWaste(product, quantity, reason) {
     setStatus('saving')
-    const { data, error } =
+    const row =
       quantity > 0
-        ? await withUsage(
-            (r) => supabase.from('waste').upsert(r, { onConflict: 'date,product_id' }).select().single(),
-            {
-              date,
-              product_id: product.id,
-              product_name: product.name,
-              quantity,
-              unit_cost: waste[product.id]?.unit_cost ?? lyCost(product),
-              reason: reason || null,
-              usage: waste[product.id]?.usage ?? usageOf(product),
-            },
-          )
-        : await supabase.from('waste').delete().eq('date', date).eq('product_id', product.id)
-    setStatus(error ? 'error' : 'saved')
-    if (showError(error)) return
+        ? {
+            date,
+            product_id: product.id,
+            product_name: product.name,
+            quantity,
+            unit_cost: waste[product.id]?.unit_cost ?? lyCost(product),
+            reason: reason || null,
+            usage: waste[product.id]?.usage ?? usageOf(product),
+          }
+        : null
+    const res = await send({ type: 'waste', key: `waste:${date}:${product.id}`, date, product_id: product.id, row })
+    if (res.replaced) return
+    setStatus(res.error ? 'error' : res.queued ? 'queued' : 'saved')
+    if (showError(res.error)) return
     setWaste((prev) => {
       const next = { ...prev }
-      if (data) next[product.id] = data
+      if (row) next[product.id] = { ...prev[product.id], ...row }
       else delete next[product.id]
       return next
     })
@@ -284,6 +324,26 @@ export default function Sales({ split = false }) {
     if (lines.length === 0) return
     setDraftBusy(true)
     const payload = { note: draft.note.trim() || null, lines, total: linesTotal(lines) }
+    // đơn lập lúc mất mạng, chưa gửi lên: sửa thẳng trong máy
+    if (draft.local) {
+      const ok = updateJob(draft.editingId, (j) => ({ order: { ...j.order, ...payload, wholesale: !!draft.wholesale } }))
+      setDraftBusy(false)
+      if (!ok) return toast('Đơn này đang được gửi lên, đợi vài giây rồi sửa lại nhé.', 'warn')
+      return setDraft(null)
+    }
+    // đơn mới: qua hàng chờ (mất mạng vẫn lập được, gửi lại không bao giờ bị trùng)
+    if (!draft.editingId) {
+      const res = await sendNewQuickOrder({ ...payload, wholesale: !!draft.wholesale, date, created_at: new Date().toISOString() }, now)
+      // database chưa chạy nang-cap-v10.sql → lập đơn như cũ ở dưới (cần có mạng)
+      if (!missingTable(res.error)) {
+        setDraftBusy(false)
+        if (showError(res.error)) return
+        if (res.queued) toast('Mất mạng: đơn đã lưu trong máy, có mạng sẽ tự gửi lên.', 'warn')
+        return setDraft(null)
+      }
+    }
+    // chỉ gửi cột wholesale khi có dùng, database chưa chạy nang-cap-v9 vẫn lập đơn thường được
+    if (draft.wholesale || draft.hasWs) payload.wholesale = !!draft.wholesale
     const { data, error } = draft.editingId
       ? await supabase.from('quick_orders').update(payload).eq('id', draft.editingId).eq('status', 'pending').select().maybeSingle()
       : await supabase
@@ -291,6 +351,10 @@ export default function Sales({ split = false }) {
           .insert({ ...payload, date })
           .select()
           .single()
+    if (missingColumn(error) && payload.wholesale) {
+      setDraftBusy(false)
+      return alert(WHOLESALE_UPGRADE)
+    }
     if (showError(error)) return setDraftBusy(false)
     if (!data) {
       setDraftBusy(false)
@@ -299,10 +363,8 @@ export default function Sales({ split = false }) {
       return loadPending()
     }
     if (now) {
-      const err = await completeQuickOrder(data)
-      if (showError(err)) {
-        setPending((p) => [...(p || []), data])
-      } else if (data.date === date) loadDay(date)
+      const res = await sendQuickDone(data)
+      if (showError(res.error)) setPending((p) => [...(p || []), data])
     } else {
       setPending((p) => (draft.editingId ? p.map((o) => (o.id === data.id ? data : o)) : [...(p || []), data]))
     }
@@ -311,12 +373,17 @@ export default function Sales({ split = false }) {
   }
 
   async function markDone(order) {
+    // đơn lập lúc mất mạng: ghi "xong" vào đơn đang chờ gửi
+    if (order.local) {
+      if (!(await finishLocalOrder(order.id))) toast('Đơn này đang được gửi lên, đợi vài giây rồi bấm lại nhé.', 'warn')
+      return
+    }
     setBusyOrder(order.id)
-    const error = await completeQuickOrder(order)
+    const res = await sendQuickDone(order)
     setBusyOrder(null)
-    if (showError(error)) return loadPending()
+    if (showError(res.error)) return loadPending()
+    if (res.queued) toast('Mất mạng: đã ghi "Đã xong" trong máy, có mạng sẽ tự gửi lên.', 'warn')
     setPending((p) => p.filter((o) => o.id !== order.id))
-    if (order.date === date) loadDay(date)
   }
 
   // Đơn đặt trước: "Đã giao" ở đây = ở Lịch đơn, doanh thu ghi 1 lần duy nhất
@@ -332,11 +399,15 @@ export default function Sales({ split = false }) {
 
   function editOrder(order) {
     if (draft?.lines.length > 0 && !confirm('Đang lập dở 1 đơn khác. Bỏ đơn đó để sửa đơn này?')) return
-    setDraft({ lines: order.lines, note: order.note || '', editingId: order.id, date: order.date })
+    setDraft({ lines: order.lines, note: order.note || '', editingId: order.id, date: order.date, wholesale: !!order.wholesale, hasWs: 'wholesale' in order, local: !!order.local })
   }
 
   async function deleteOrder(order) {
     if (!confirm(`Xóa "${orderLabel(order)}" (${money(order.total)})? Đơn chưa giao nên không ảnh hưởng doanh thu.`)) return
+    if (order.local) {
+      if (!removeJob(order.id)) toast('Đơn này đang được gửi lên, đợi vài giây rồi xóa lại nhé.', 'warn')
+      return
+    }
     const { error } = await supabase.from('quick_orders').delete().eq('id', order.id).eq('status', 'pending')
     if (!showError(error)) setPending((p) => p.filter((o) => o.id !== order.id))
   }
@@ -365,14 +436,23 @@ export default function Sales({ split = false }) {
   const shownPre = preorders.filter((o) => showAt(o) <= nowMs)
   const laterPre = preorders.filter((o) => showAt(o) > nowMs && o.order_date === todayStr())
 
+  // đơn chờ = trên database + đơn lập lúc mất mạng chưa gửi; đơn đã bấm xong mà chưa gửi được thì ẩn khỏi đơn chờ
+  const doneUnsent = new Set(outbox.jobs.filter((j) => j.type === 'quick-done').map((j) => j.order_id))
+  const local = localOrders(outbox.jobs)
+  const waiting = pending || local.length ? [...(pending || []).filter((o) => !doneUnsent.has(o.id)), ...local] : null
+
   const activeIds = new Set(products.map((p) => p.id))
   const shopRows = Object.values(rows).filter((r) => activeIds.has(r.product_id))
   const otherRows = dayRows.filter((r) => !(r.source === '' && activeIds.has(r.product_id)))
   const orderRows = otherRows.filter((r) => r.source.startsWith('order:'))
   const hiddenRows = otherRows.filter((r) => r.source === '')
-  const all = [...shopRows, ...otherRows]
-  const totalQty = all.reduce((s, r) => s + r.quantity, 0)
-  const chaiQty = all.reduce((s, r) => s + (r.pack === 'chai' ? r.quantity : 0), 0)
+  // đơn đã xong nhưng chưa gửi được (mất mạng) vẫn cộng vào số hôm nay
+  const unsent = unsentSales(outbox.jobs).filter((r) => r.date === date)
+  const all = [...shopRows, ...otherRows, ...unsent]
+  // bán sỉ: có doanh thu nhưng không tính vào số phần đã bán
+  const totalQty = all.reduce((s, r) => s + soldQty(r), 0)
+  const chaiQty = all.reduce((s, r) => s + (r.pack === 'chai' ? soldQty(r) : 0), 0)
+  const wsQty = all.reduce((s, r) => s + (r.wholesale ? r.quantity : 0), 0)
   const revenue = all.reduce((s, r) => s + saleRevenue(r), 0)
   const cost = all.reduce((s, r) => s + saleCost(r), 0)
   const wasteList = Object.values(waste)
@@ -384,7 +464,7 @@ export default function Sales({ split = false }) {
   all.forEach((r) => {
     if (!r.product_id) return
     const s = (sold[r.product_id] ||= { ly: 0, chai: 0 })
-    s[r.pack === 'chai' ? 'chai' : 'ly'] += r.quantity
+    s[r.pack === 'chai' ? 'chai' : 'ly'] += soldQty(r)
   })
   const inDraft = {} // product_id → các dòng trong đơn đang lập
   draft?.lines.forEach((l) => (inDraft[l.product_id] ||= []).push(l))
@@ -444,6 +524,8 @@ export default function Sales({ split = false }) {
             </>
           ) : status === 'saved' ? (
             '✓ Đã lưu'
+          ) : status === 'queued' ? (
+            'Đã lưu trong máy · chờ mạng'
           ) : status === 'error' ? (
             'Lỗi lưu'
           ) : (
@@ -485,7 +567,11 @@ export default function Sales({ split = false }) {
           <StatTile
             label="Đã bán"
             value={`${totalQty} phần`}
-            note={[chaiQty > 0 && `${totalQty - chaiQty} ly · ${chaiQty} chai`, wasteQty > 0 && `hủy ${wasteQty}`].filter(Boolean).join(' · ') || undefined}
+            note={
+              [chaiQty > 0 && `${totalQty - chaiQty} ly · ${chaiQty} chai`, wsQty > 0 && `sỉ ${wsQty} (không tính)`, wasteQty > 0 && `hủy ${wasteQty}`]
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
           />
           <StatTile label="Doanh thu" value={money(revenue)} />
           <StatTile
@@ -497,21 +583,21 @@ export default function Sales({ split = false }) {
         </div>
       )}
 
-      {barista && pending?.length === 0 && shownPre.length === 0 && <div className="barista-empty">Chưa có đơn nào đang chờ pha.</div>}
-      {(pending?.length > 0 || shownPre.length > 0) && (
+      {barista && waiting?.length === 0 && shownPre.length === 0 && <div className="barista-empty">Chưa có đơn nào đang chờ pha.</div>}
+      {(waiting?.length > 0 || shownPre.length > 0) && (
         <section className="pending">
           <div className="section-head">
             <h2>
-              Đơn đang chờ ({(pending?.length || 0) + shownPre.length})
+              Đơn đang chờ ({(waiting?.length || 0) + shownPre.length})
               {shownPre.length > 0 && <span className="preorder-count"> · {shownPre.length} đặt trước</span>}
             </h2>
-            {!barista && <span className="muted small">{money((pending || []).reduce((s, o) => s + Number(o.total), 0))}</span>}
+            {!barista && <span className="muted small">{money((waiting || []).reduce((s, o) => s + Number(o.total), 0))}</span>}
           </div>
           <div className={barista ? 'qorder-grid' : 'pending-strip'}>
             {shownPre.map((o) => (
               <PreOrderCard key={`p${o.id}`} order={o} busy={busyOrder === `p${o.id}`} onDone={() => markPreDone(o)} onEdit={() => setEditPre(o)} />
             ))}
-            {(pending || []).map((o) => (
+            {(waiting || []).map((o) => (
               <OrderCard
                 key={o.id}
                 order={o}

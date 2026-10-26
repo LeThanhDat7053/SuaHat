@@ -44,10 +44,11 @@ const WD_LONG = { 0: 'Chủ nhật', 1: 'Thứ 2', 2: 'Thứ 3', 3: 'Thứ 4', 4
 
 async function fetchQuick(from, to) {
   const { data, error } = await fetchAll(() =>
-    supabase.from('quick_orders').select('id,date,created_at,lines,total').eq('status', 'done').gte('date', from).lte('date', to).order('id'),
+    supabase.from('quick_orders').select('*').eq('status', 'done').gte('date', from).lte('date', to).order('id'),
   )
   if (error) throw error
-  return data
+  // đơn bán sỉ không phải khách ghé quán → không tính vào giờ đông khách
+  return data.filter((o) => !o.wholesale)
 }
 
 const empty = () => ({ orders: 0, cups: 0, money: 0 })
