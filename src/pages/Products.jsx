@@ -10,7 +10,7 @@ import { peek } from '../lib/cache'
 import { FEATURED_KEY, loadFeatured } from '../lib/featured'
 import { useLive } from '../lib/live'
 import { plain } from '../lib/categories'
-import { altText, costModeOf, recipeUnits } from '../lib/units'
+import { altOf, altText, costModeOf, itemUnit, recipeUnits, showsAlt } from '../lib/units'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, SaveButton } from '../components/ui'
 
 export { DEFAULT_MARGIN }
@@ -355,7 +355,7 @@ function ItemRows({ rows, onChange, ingredients, placeholder = 'Lượng' }) {
 const cleanItems = (rows) =>
   rows
     .filter((r) => r.ingredient_id && Number(r.amount) > 0)
-    .map((r) => ({ ingredient_id: Number(r.ingredient_id), amount: Number(r.amount) }))
+    .map((r) => ({ ingredient_id: Number(r.ingredient_id), amount: Number(r.amount), ...(r.unit ? { unit: r.unit } : {}) }))
 
 // Size hay bán, bấm là điền dung tích; size khác vẫn gõ tay được
 const SIZES = [250, 270, 300, 350, 500, 600]
@@ -374,7 +374,7 @@ function PortionList({ batch, volume, ingMap }) {
       {rows.map((r, i) => {
         const g = ingMap[r.ingredient_id]
         const amount = Number(r.amount) * k
-        const alt = altText(amount, g)
+        const alt = showsAlt(r, g) && altText(amount, g)
         return (
           <div key={i} className="kv">
             <span>{g?.name || '(nguyên liệu đã xóa)'}</span>
@@ -591,18 +591,20 @@ function toGrid(items, ingMap) {
   items.forEach((r) => {
     const g = ingMap[r.ingredient_id]
     if (!g) return
-    const unit = recipeUnits(g)[0].unit
+    const unit = itemUnit(r, g)
     grid[g.id] = { value: +(Number(r.amount) / factorOf(g, unit)).toFixed(2), unit }
   })
   return grid
 }
 
+// Nguyên liệu có quy đổi thì nhớ đơn vị đã gõ của mẻ này (sữa bắp theo trái, mẻ khác theo g)
 function fromGrid(grid, ingredients) {
   return ingredients
     .filter((g) => Number(grid[g.id]?.value) > 0)
     .map((g) => {
       const { value, unit } = grid[g.id]
-      return { ingredient_id: g.id, amount: +(Number(value) * factorOf(g, unit)).toFixed(6) }
+      const amount = +(Number(value) * factorOf(g, unit)).toFixed(6)
+      return altOf(g) ? { ingredient_id: g.id, amount, unit: unit === altOf(g).unit ? unit : g.unit } : { ingredient_id: g.id, amount }
     })
 }
 

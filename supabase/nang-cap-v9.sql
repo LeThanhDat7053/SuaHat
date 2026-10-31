@@ -8,7 +8,7 @@
 --  Chạy lại nhiều lần cũng không sao. Dữ liệu cũ giữ nguyên (tính là bán lẻ).
 -- =====================================================================
 
-alter table sales add column if not exists w    holesale boolean not null default false;
+alter table sales add column if not exists wholesale boolean not null default false;
 alter table quick_orders add column if not exists wholesale boolean not null default false;
 alter table orders add column if not exists wholesale boolean not null default false;
 

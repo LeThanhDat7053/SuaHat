@@ -77,3 +77,41 @@ describe('save_quick_order (nang-cap-v10)', () => {
     expect(o.note).toBeNull()
   })
 })
+
+describe('gop-bap.sql', () => {
+  const run = (g) => db.exec(sql('gop-bap.sql').replace('gam_moi_trai numeric := 0;', `gam_moi_trai numeric := ${g};`))
+
+  it('chưa điền số g 1 trái → báo lỗi, không sửa gì', async () => {
+    await expect(db.exec(sql('gop-bap.sql'))).rejects.toThrow(/gam_moi_trai/)
+  })
+
+  it('gộp Bắp SB (trái) vào Bắp (g): mẻ trái vẫn hiện trái, mẻ g vẫn hiện g', async () => {
+    await db.exec(`
+      insert into ingredients (id, name, unit, price_per_unit) overriding system value values
+        (101, 'Bắp', 'g', 0), (102, 'Bắp SB', 'trái', 6000), (103, 'Đường', 'g', 20);
+      insert into recipes (id, name, yield_ml, items) overriding system value values
+        (201, 'Sữa bắp', 5000, '[{"ingredient_id":102,"amount":20},{"ingredient_id":103,"amount":300}]'),
+        (202, 'Chè bắp', 3000, '[{"ingredient_id":101,"amount":500}]');
+      insert into products (id, name, price, recipe) overriding system value values
+        (301, 'Bắp xào', 20000, '[{"ingredient_id":101,"amount":100}]');
+    `)
+    await expect(db.exec(sql('gop-bap-xem-truoc.sql'))).resolves.toBeTruthy()
+    await run(150)
+
+    const g = await one(`select * from ingredients where id = 101`)
+    expect([g.alt_unit, Number(g.alt_base), Number(g.alt_qty), Number(g.price_per_unit)]).toEqual(['trái', 150, 1, 40])
+    expect((await one(`select items from recipes where id = 201`)).items).toEqual([
+      { ingredient_id: 101, amount: 3000, unit: 'trái' },
+      { ingredient_id: 103, amount: 300 },
+    ])
+    expect((await one(`select items from recipes where id = 202`)).items).toEqual([{ ingredient_id: 101, amount: 500, unit: 'g' }])
+    expect((await one(`select recipe from products where id = 301`)).recipe).toEqual([{ ingredient_id: 101, amount: 100, unit: 'g' }])
+    const t = await one(`select * from ingredients where id = 102`)
+    expect([t.name, t.no_stock]).toEqual(['Bắp SB (đã gộp vào Bắp)', true])
+  })
+
+  it('chạy lần 2 → báo đã gộp, không nhân lượng lần nữa', async () => {
+    await expect(run(150)).rejects.toThrow(/đã gộp rồi/)
+    expect((await one(`select items from recipes where id = 201`)).items[0].amount).toBe(3000)
+  })
+})

@@ -680,7 +680,8 @@ Không dùng quy đổi thì xóa trống cả 3 ô.`,
         <div className="field">
           <span className="field-label">Quy đổi trong công thức (không bắt buộc)</span>
           <span className="field-hint">
-            VD trà: 44 g pha ra 380 ml → công thức gõ theo ml, app tự đổi ra g để tính tiền và trừ kho. Không cần thì để trống.
+            VD trà: 44 g pha ra 380 ml → công thức gõ theo ml, app tự đổi ra g để tính tiền và trừ kho. Bắp: 150 g = 1 trái → nhập hàng và
+            công thức gõ theo trái được, mẻ nào gõ g thì vẫn hiện g. Không cần thì để trống.
           </span>
           <div className="buy-conv">
             <div className="unit-input">

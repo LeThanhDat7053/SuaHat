@@ -10,7 +10,7 @@ import { FEATURED_KEY, loadFeatured } from '../lib/featured'
 import { plain } from '../lib/categories'
 import { useLive } from '../lib/live'
 import { useBarista } from '../lib/barista'
-import { altOf, altText } from '../lib/units'
+import { altText, showsAlt } from '../lib/units'
 import { Empty, Loading, PageHeader } from '../components/ui'
 
 // Luôn ghi g / ml (không đổi sang kg / lít) cho khớp với cân, ca đong
@@ -91,7 +91,7 @@ function Row({ r, g, k = 1 }) {
   return (
     <div className="rx-row">
       <span className="rx-ing">{g ? nfc(g.name) : '(nguyên liệu đã xóa)'}</span>
-      {altOf(g) ? (
+      {showsAlt(r, g) ? (
         // có quy đổi (trà 44 g = 380 ml): hiện ml cho dễ đong, kèm số g để cân
         <span className="rx-amt">
           {altText(amount, g)} <span className="rx-alt">({qty(amount, g.unit)})</span>

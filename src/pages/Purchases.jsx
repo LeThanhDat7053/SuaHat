@@ -9,6 +9,7 @@ import { missingColumn } from '../lib/quick'
 import { BIG_UNIT, fmtDate, fmtQty, money, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton } from '../components/ui'
 import { UNITS } from './Ingredients'
+import { altOf, buyUnitsOf } from '../lib/units'
 import { groupByCategory } from '../lib/categories'
 
 export default function Purchases() {
@@ -119,11 +120,13 @@ function lineInfo(line, ingredients) {
   const isNew = line.ingredient_id === 'new'
   const ing = ingredients.find((g) => String(g.id) === String(line.ingredient_id))
   const unit = isNew ? line.new_unit : ing?.unit
-  // mua theo đơn vị lớn (kg / lít) thì đổi ra đơn vị nhỏ (g / ml) để lưu
+  // mua theo đơn vị lớn (kg / lít) hoặc đơn vị quy đổi (bắp: trái) thì đổi ra đơn vị gốc (g / ml) để lưu
   const big = BIG_UNIT[unit]
-  const buyUnits = big ? [big, unit] : [unit]
-  const buyUnit = buyUnits.includes(line.buy_unit) ? line.buy_unit : buyUnits[0]
-  const quantity = Number(line.quantity || 0) * (buyUnit === big ? 1000 : 1)
+  const units = buyUnitsOf(isNew ? null : ing, unit)
+  const buyUnits = units.map((u) => u.unit)
+  const buy = units.find((u) => u.unit === line.buy_unit) || units[0]
+  const buyUnit = buy.unit
+  const quantity = Number(line.quantity || 0) * buy.factor
   const price = quantity > 0 ? Number(line.total || 0) / quantity : 0
   return { isNew, ing, unit, big, buyUnits, buyUnit, quantity, price }
 }
@@ -329,7 +332,9 @@ function PurchaseForm({ onClose, onSaved }) {
                     label="Số lượng mua"
                     hint={
                       info.buyUnit !== info.unit && info.quantity > 0
-                        ? `= ${fmtQty(info.quantity, info.unit)}`
+                        ? `= ${fmtQty(info.quantity, info.unit)}${
+                            altOf(info.ing)?.unit === info.buyUnit ? ` (1 ${info.buyUnit} ≈ ${fmtQty(altOf(info.ing).factor, info.unit)})` : ''
+                          }`
                         : info.big
                           ? `VD: 2,5 ${info.big} thì nhập 2.5`
                           : ''
