@@ -17,11 +17,16 @@ export default function Checks() {
   const [tick, setTick] = useState(0)
   const [open, setOpen] = useState({}) // id mục → true / false (mặc định: mở mục sai số / nên xem, đóng mục để biết)
   const [all, setAll] = useState({}) // id mục → đang xem hết danh sách
+  const [failed, setFailed] = useState(null) // lỗi lúc quét: hiện ra thay vì quay vòng mãi
   const outbox = useOutbox()
 
   useLive(['sales', 'waste', 'purchases', 'stock_counts', 'orders', 'quick_orders', 'products', 'ingredients', 'recipes'], () => setTick((t) => t + 1))
   useEffect(() => {
-    loadChecks(0).then(setIssues, showError)
+    setFailed(null)
+    loadChecks(0).then(setIssues, (e) => {
+      showError(e)
+      setFailed(e?.message || String(e))
+    })
   }, [tick, outbox.jobs.length])
 
   async function run(key, fn, done) {
@@ -72,7 +77,15 @@ export default function Checks() {
         </button>
       </PageHeader>
 
-      {!issues ? (
+      {!issues && failed ? (
+        <div className="card">
+          <strong>Chưa quét được</strong>
+          <p className="muted small">{failed}</p>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setTick((t) => t + 1)}>
+            <RefreshCw size={15} /> Thử lại
+          </button>
+        </div>
+      ) : !issues ? (
         <Loading />
       ) : (
         <>
