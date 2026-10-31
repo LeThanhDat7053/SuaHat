@@ -1245,15 +1245,28 @@ html { touch-action: manipulation; }
 .net-good { background: var(--good-soft); color: var(--good); border-color: var(--good-line); }
 .net-status a { color: inherit; text-decoration: underline; pointer-events: auto; }
 
-/* Kiểm tra số liệu */
-.check { margin-bottom: 14px; border-left: 4px solid var(--line); }
-.check-error { border-left-color: var(--bad); }
-.check-warn { border-left-color: var(--warn); }
-.check-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 14px 16px 12px; }
-.check-head p { margin: 0; }
-.check .list-row { flex-wrap: wrap; }
-.check-ok { display: flex; gap: 12px; align-items: center; color: var(--good); margin-bottom: 14px; }
-.check-ok p { margin: 2px 0 0; }
+/* Kiểm tra số liệu (tên "audit" để không trùng .check của ô tick) */
+.audit { margin-bottom: 12px; border-left: 4px solid var(--line); }
+.audit-error { border-left-color: var(--bad); }
+.audit-warn { border-left-color: var(--warn); }
+.audit-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 14px 16px; background: none; border: 0; text-align: left; color: var(--ink); font: inherit; cursor: pointer;
+}
+.audit-title { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.audit-caret { flex-shrink: 0; transition: transform 0.15s; }
+.audit-caret.on { transform: rotate(180deg); }
+.audit-why { margin: -6px 0 0; padding: 0 16px 12px; line-height: 1.45; }
+.audit-actions { padding: 0 16px 12px; }
+.audit-list { border-top: 1px solid var(--line); }
+.audit .list-row { flex-wrap: wrap; }
+.audit-more { justify-content: center; color: var(--primary); font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+.audit-sum { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.audit-pill { padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; background: var(--surface-2); color: var(--muted); }
+.audit-pill-error { background: var(--bad-soft); color: var(--bad); }
+.audit-pill-warn { background: var(--warn-soft); color: var(--warn); }
+.audit-ok { display: flex; gap: 12px; align-items: center; color: var(--good); margin-bottom: 14px; }
+.audit-ok p { margin: 2px 0 0; }
 
 /* Đơn lập lúc mất mạng, chưa gửi lên */
 .qorder-unsent { margin-top: 4px; font-size: 0.78rem; font-weight: 600; color: var(--warn); }

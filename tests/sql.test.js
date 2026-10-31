@@ -4,7 +4,7 @@ import { PGlite } from '@electric-sql/pglite'
 
 // Chạy THẬT các file SQL (schema + nâng cấp) trên Postgres trong máy (PGlite), rồi gọi thử các hàm database.
 const sql = (f) => readFileSync(new URL(`../supabase/${f}`, import.meta.url), 'utf8')
-const FILES = ['schema.sql', 'nang-cap-v2.sql', 'nang-cap-v3.sql', 'nang-cap-v4.sql', 'nang-cap-v6.sql', 'nang-cap-v7.sql', 'nang-cap-v8.sql', 'nang-cap-v9.sql', 'nang-cap-v10.sql']
+const FILES = ['schema.sql', 'nang-cap-v2.sql', 'nang-cap-v3.sql', 'nang-cap-v4.sql', 'nang-cap-v6.sql', 'nang-cap-v7.sql', 'nang-cap-v8.sql', 'nang-cap-v9.sql', 'nang-cap-v10.sql', 'nang-cap-v11.sql']
 
 let db
 const one = async (q, p) => (await db.query(q, p)).rows[0]
@@ -78,40 +78,42 @@ describe('save_quick_order (nang-cap-v10)', () => {
   })
 })
 
-describe('gop-bap.sql', () => {
-  const run = (g) => db.exec(sql('gop-bap.sql').replace('gam_moi_trai numeric := 0;', `gam_moi_trai numeric := ${g};`))
+describe('nang-cap-v11.sql (gộp bắp)', () => {
+  const run = () => db.exec(sql('nang-cap-v11.sql'))
 
-  it('chưa điền số g 1 trái → báo lỗi, không sửa gì', async () => {
-    await expect(db.exec(sql('gop-bap.sql'))).rejects.toThrow(/gam_moi_trai/)
-  })
-
-  it('gộp Bắp SB (trái) vào Bắp (g): mẻ trái vẫn hiện trái, mẻ g vẫn hiện g', async () => {
+  it('gộp Bắp SB (trái) vào Bắp (g): mẻ trái vẫn hiện trái, mẻ g vẫn hiện g, lịch sử đổi ra g rồi xóa Bắp SB', async () => {
     await db.exec(`
       insert into ingredients (id, name, unit, price_per_unit) overriding system value values
-        (101, 'Bắp', 'g', 0), (102, 'Bắp SB', 'trái', 6000), (103, 'Đường', 'g', 20);
+        (101, 'Bắp', 'g', 16), (102, 'Bắp SB', 'trái', 6571), (103, 'Đường', 'g', 20);
       insert into recipes (id, name, yield_ml, items) overriding system value values
-        (201, 'Sữa bắp', 5000, '[{"ingredient_id":102,"amount":20},{"ingredient_id":103,"amount":300}]'),
-        (202, 'Chè bắp', 3000, '[{"ingredient_id":101,"amount":500}]');
+        (201, 'Sữa bắp', 5000, '[{"ingredient_id":102,"amount":4},{"ingredient_id":103,"amount":300}]'),
+        (202, 'Chè bắp', 3000, '[{"ingredient_id":101,"amount":120}]');
       insert into products (id, name, price, recipe) overriding system value values
         (301, 'Bắp xào', 20000, '[{"ingredient_id":101,"amount":100}]');
+      insert into purchases (date, ingredient_id, item_name, quantity, unit, total) values ('2026-10-20', 102, 'Bắp SB', 30, 'trái', 240000);
+      insert into stock_counts (date, ingredient_id, counted, expected, unit_price) values ('2026-10-21', 102, 2, 5, 8000);
     `)
-    await expect(db.exec(sql('gop-bap-xem-truoc.sql'))).resolves.toBeTruthy()
-    await run(150)
+    await run()
 
     const g = await one(`select * from ingredients where id = 101`)
-    expect([g.alt_unit, Number(g.alt_base), Number(g.alt_qty), Number(g.price_per_unit)]).toEqual(['trái', 150, 1, 40])
+    expect([g.alt_unit, Number(g.alt_base), Number(g.alt_qty), +Number(g.price_per_unit).toFixed(4)]).toEqual(['trái', 150, 1, 53.3333])
+    expect(await count(`ingredients where id = 102`)).toBe(0)
     expect((await one(`select items from recipes where id = 201`)).items).toEqual([
-      { ingredient_id: 101, amount: 3000, unit: 'trái' },
+      { ingredient_id: 101, amount: 600, unit: 'trái' },
       { ingredient_id: 103, amount: 300 },
     ])
-    expect((await one(`select items from recipes where id = 202`)).items).toEqual([{ ingredient_id: 101, amount: 500, unit: 'g' }])
+    expect((await one(`select items from recipes where id = 202`)).items).toEqual([{ ingredient_id: 101, amount: 120, unit: 'g' }])
     expect((await one(`select recipe from products where id = 301`)).recipe).toEqual([{ ingredient_id: 101, amount: 100, unit: 'g' }])
-    const t = await one(`select * from ingredients where id = 102`)
-    expect([t.name, t.no_stock]).toEqual(['Bắp SB (đã gộp vào Bắp)', true])
+    const p = await one(`select * from purchases where ingredient_id = 101`)
+    expect([Number(p.quantity), p.unit, Number(p.total), p.in_count, p.item_name]).toEqual([4500, 'g', 240000, true, 'Bắp'])
+    const c = await one(`select * from stock_counts where ingredient_id = 101`)
+    // tiền hao hụt giữ nguyên: (5 − 2) trái × 8.000đ = (750 − 300) g × 53,33đ
+    expect([Number(c.counted), Number(c.expected), (Number(c.expected) - Number(c.counted)) * Number(c.unit_price)]).toEqual([300, 750, 24000])
   })
 
-  it('chạy lần 2 → báo đã gộp, không nhân lượng lần nữa', async () => {
-    await expect(run(150)).rejects.toThrow(/đã gộp rồi/)
-    expect((await one(`select items from recipes where id = 201`)).items[0].amount).toBe(3000)
+  it('chạy lần 2 → không nhân lượng lần nữa', async () => {
+    await run()
+    expect((await one(`select items from recipes where id = 201`)).items[0].amount).toBe(600)
+    expect(Number((await one(`select quantity from purchases where ingredient_id = 101`)).quantity)).toBe(4500)
   })
 })

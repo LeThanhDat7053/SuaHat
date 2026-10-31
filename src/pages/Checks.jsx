@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRight, RefreshCw, ShieldCheck } from 'lucide-react'
+import { ChevronDown, ChevronRight, RefreshCw, ShieldCheck } from 'lucide-react'
 import { showError, supabase } from '../lib/supabase'
 import { CHECKS_KEY, DAYS, LEVELS, loadChecks } from '../lib/checks'
 import { removeJob, retryFailed, useOutbox } from '../lib/outbox'
@@ -15,6 +15,8 @@ export default function Checks() {
   const [issues, setIssues] = useState(() => peek(CHECKS_KEY) || null)
   const [busy, setBusy] = useState(null) // id mục đang sửa
   const [tick, setTick] = useState(0)
+  const [open, setOpen] = useState({}) // id mục → true / false (mặc định: mở mục sai số / nên xem, đóng mục để biết)
+  const [all, setAll] = useState({}) // id mục → đang xem hết danh sách
   const outbox = useOutbox()
 
   useLive(['sales', 'waste', 'purchases', 'stock_counts', 'orders', 'quick_orders', 'products', 'ingredients', 'recipes'], () => setTick((t) => t + 1))
@@ -58,6 +60,9 @@ export default function Checks() {
   }
 
   const serious = issues?.filter((i) => i.level !== 'info') || []
+  const byLevel = (lv) => issues?.filter((i) => i.level === lv).reduce((n, i) => n + i.items.length, 0) || 0
+  const isOpen = (issue) => open[issue.id] ?? issue.level !== 'info'
+  const SHOW = 5 // danh sách dài thì hiện 5 dòng đầu, bấm "Xem thêm"
 
   return (
     <>
@@ -72,7 +77,7 @@ export default function Checks() {
       ) : (
         <>
           {serious.length === 0 && (
-            <div className="card check-ok">
+            <div className="card audit-ok">
               <ShieldCheck size={22} />
               <div>
                 <strong>Số liệu ổn</strong>
@@ -81,59 +86,91 @@ export default function Checks() {
             </div>
           )}
 
-          {issues.map((issue) => (
-            <section key={issue.id} className={`card list-card check check-${issue.level}`}>
-              <div className="check-head">
-                <span className={`badge badge-${issue.level === 'error' ? 'bad' : issue.level === 'warn' ? 'warn' : 'neutral'}`}>{LEVELS[issue.level]}</span>
-                <strong>
-                  {issue.title} ({issue.items.length})
-                </strong>
-                <p className="muted small">{issue.why}</p>
-                {issue.fix === 'outbox' && (
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => retryFailed()}>
-                    <RefreshCw size={15} /> Gửi lại tất cả
-                  </button>
-                )}
-              </div>
-              {issue.items.map((item) => {
-                const body = (
-                  <>
-                    <span className="grow">
-                      {item.text}
-                      {item.note && <span className="muted small block">{item.note}</span>}
+          {issues.length > 0 && (
+            <div className="audit-sum">
+              {['error', 'warn', 'info'].map((lv) =>
+                byLevel(lv) > 0 ? (
+                  <span key={lv} className={`audit-pill audit-pill-${lv}`}>
+                    <b>{byLevel(lv)}</b> {LEVELS[lv].toLowerCase()}
+                  </span>
+                ) : null,
+              )}
+            </div>
+          )}
+
+          {issues.map((issue) => {
+            const shown = isOpen(issue)
+            const list = all[issue.id] ? issue.items : issue.items.slice(0, SHOW)
+            return (
+              <section key={issue.id} className={`card list-card audit audit-${issue.level}`}>
+                <button type="button" className="audit-head" onClick={() => setOpen({ ...open, [issue.id]: !shown })} aria-expanded={shown}>
+                  <span className="audit-title">
+                    <strong>{issue.title}</strong>
+                    <span className={`badge badge-${issue.level === 'error' ? 'bad' : issue.level === 'warn' ? 'warn' : 'neutral'}`}>
+                      {issue.items.length}
                     </span>
-                    {item.link && <ChevronRight size={18} className="muted" />}
-                  </>
-                )
-                if (item.link)
-                  return (
-                    <Link key={item.key} to={item.link} className="list-row list-link">
-                      {body}
-                    </Link>
-                  )
-                return (
-                  <div key={item.key} className="list-row">
-                    {body}
-                    {issue.fix === 'resync' && (
-                      <button type="button" className="btn btn-primary btn-sm" disabled={busy != null} onClick={() => resync(item)}>
-                        {busy === item.key && <span className="spinner" aria-hidden="true" />} Ghi lại doanh thu
-                      </button>
-                    )}
-                    {issue.fix === 'cost' && (
-                      <button type="button" className="btn btn-primary btn-sm" disabled={busy != null} onClick={() => fixCost(item)}>
-                        {busy === item.key && <span className="spinner" aria-hidden="true" />} Sửa giá vốn
-                      </button>
-                    )}
+                  </span>
+                  <ChevronDown size={18} className={`muted audit-caret ${shown ? 'on' : ''}`} />
+                </button>
+                {shown && (
+                  <>
+                    <p className="audit-why muted small">{issue.why}</p>
                     {issue.fix === 'outbox' && (
-                      <button type="button" className="btn btn-danger-ghost btn-sm" onClick={() => discard(item)}>
-                        Bỏ
-                      </button>
+                      <div className="audit-actions">
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => retryFailed()}>
+                          <RefreshCw size={15} /> Gửi lại tất cả
+                        </button>
+                      </div>
                     )}
-                  </div>
-                )
-              })}
-            </section>
-          ))}
+                    <div className="audit-list">
+                      {list.map((item) => {
+                        const body = (
+                          <>
+                            <span className="grow">
+                              {item.text}
+                              {item.note && <span className="muted small block">{item.note}</span>}
+                            </span>
+                            {item.link && <ChevronRight size={18} className="muted" />}
+                          </>
+                        )
+                        if (item.link)
+                          return (
+                            <Link key={item.key} to={item.link} className="list-row list-link">
+                              {body}
+                            </Link>
+                          )
+                        return (
+                          <div key={item.key} className="list-row">
+                            {body}
+                            {issue.fix === 'resync' && (
+                              <button type="button" className="btn btn-primary btn-sm" disabled={busy != null} onClick={() => resync(item)}>
+                                {busy === item.key && <span className="spinner" aria-hidden="true" />} Ghi lại doanh thu
+                              </button>
+                            )}
+                            {issue.fix === 'cost' && (
+                              <button type="button" className="btn btn-primary btn-sm" disabled={busy != null} onClick={() => fixCost(item)}>
+                                {busy === item.key && <span className="spinner" aria-hidden="true" />} Sửa giá vốn
+                              </button>
+                            )}
+                            {issue.fix === 'outbox' && (
+                              <button type="button" className="btn btn-danger-ghost btn-sm" onClick={() => discard(item)}>
+                                Bỏ
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {issue.items.length > SHOW && (
+                        <button type="button" className="list-row audit-more" onClick={() => setAll({ ...all, [issue.id]: !all[issue.id] })}>
+                          {all[issue.id] ? 'Thu gọn' : `Xem thêm ${issue.items.length - SHOW} mục`}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            )
+          })}
         </>
       )}
     </>

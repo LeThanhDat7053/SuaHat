@@ -20,7 +20,7 @@ const UPGRADES = [
   ['nang-cap-v2.sql', 'recipes', 'id', 'Công thức mẻ, hàng hủy, kiểm kê'],
   ['nang-cap-v3.sql', 'quick_orders', 'id', 'Lập đơn nhanh, bán Ly / Chai'],
   ['nang-cap-v4.sql', 'recurring_expenses', 'id', 'Báo thức, chi phí định kỳ'],
-  ['nang-cap-v6.sql', 'ingredients', 'category', 'Nhóm nguyên liệu'],
+  ['nang-cap-v11.sql', 'ingredients', 'category', 'Nhóm nguyên liệu (gồm cả v6), gộp Bắp SB vào Bắp'],
   ['nang-cap-v7.sql', 'ingredients', 'no_stock', 'Nguyên liệu "nhà có", "tính lúc mua"'],
   ['nang-cap-v8.sql', 'sales', 'usage', 'Chốt lượng nguyên liệu lúc bán (sửa công thức không làm nhảy tồn kho)'],
   ['nang-cap-v9.sql', 'sales', 'wholesale', 'Bán sỉ'],

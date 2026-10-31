@@ -6,7 +6,7 @@ import { loadStockCached } from '../lib/stock'
 import { useLive } from '../lib/live'
 import { avgPrice } from '../lib/cost'
 import { missingColumn } from '../lib/quick'
-import { BIG_UNIT, fmtDate, fmtQty, money, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
+import { BIG_UNIT, fmtDate, fmtQty, money, num, periodRange, todayStr, unitMoney, unitPrice } from '../lib/format'
 import { Empty, Field, Loading, Modal, MoneyInput, PageHeader, PeriodPicker, SaveButton } from '../components/ui'
 import { UNITS } from './Ingredients'
 import { altOf, buyUnitsOf } from '../lib/units'
@@ -304,6 +304,15 @@ function PurchaseForm({ onClose, onSaved }) {
                 {info.ing && !info.ing.no_stock && (
                   <p className="field-hint buy-ctx">
                     Đang còn <b>{fmtQty(c, info.unit)}</b>
+                    {altOf(info.ing) && info.buyUnits.includes(altOf(info.ing).unit) && (
+                      <>
+                        {' '}
+                        (≈ {num(c / altOf(info.ing).factor, 1)} {altOf(info.ing).unit}) · giá đang dùng{' '}
+                        <b>
+                          {money(info.ing.price_per_unit * altOf(info.ing).factor)}/{altOf(info.ing).unit}
+                        </b>
+                      </>
+                    )}
                     {lastBuy[info.ing.id] && (
                       <>
                         {' '}
@@ -403,6 +412,7 @@ function PurchaseForm({ onClose, onSaved }) {
                     <div className="kv">
                       <span>Giá lần này</span>
                       <strong>
+                        {altOf(info.ing) && info.buyUnits.includes(altOf(info.ing).unit) ? `${money(info.price * altOf(info.ing).factor)}/${altOf(info.ing).unit} · ` : ''}
                         {info.big ? `${money(info.price * 1000)}/${info.big} · ` : ''}
                         {unitMoney(info.price)}/{info.unit}
                       </strong>
